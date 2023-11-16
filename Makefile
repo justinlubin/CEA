@@ -1,6 +1,6 @@
 .PHONY: run
 run:
-	python bin/main.py
+	python -m cli
 
 .PHONY: test
 test:
