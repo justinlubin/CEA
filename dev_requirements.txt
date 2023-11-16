@@ -3,3 +3,4 @@ pyflakes
 black
 pylsp-mypy
 python-lsp-server
+pytest
