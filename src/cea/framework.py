@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import Sequence, Callable, Self, Optional
 import inspect
 
+USER_MODE: bool = False
+
 
 class Var(metaclass=ABCMeta):
     name: str
@@ -39,6 +41,10 @@ class Relation(metaclass=ABCMeta):
         super().__init_subclass__(**kwargs)
         RELATIONS.append(cls)
 
+    def __post_init__(self) -> None:
+        if USER_MODE:
+            TRACE.append(self)
+
     def __str__(self) -> str:
         inner = [f"{p.name}={getattr(self, p.name)}" for p in self.arity()]
         return self.name() + "(" + ", ".join(inner) + ")"
@@ -52,7 +58,7 @@ class Relation(metaclass=ABCMeta):
         return list(inspect.signature(cls.__init__).parameters.values())[1:]
 
     @classmethod
-    def full(cls, prefix: str) -> Self:
+    def free(cls, prefix: str) -> Self:
         return cls(*[p.annotation.var(prefix + p.name) for p in cls.arity()])
 
     @classmethod
@@ -65,15 +71,38 @@ class Relation(metaclass=ABCMeta):
         return self.name() + "(" + ", ".join(inner) + ")"
 
 
-RELATIONS: list[Relation] = []
+RELATIONS: list[type[Relation]] = []
+TRACE: list[Relation] = []
+QOI: Optional[Relation] = None
 
 
 class Data(metaclass=ABCMeta):
     class R(Relation):
         ...
 
+    def __post_init__(self) -> None:
+        if USER_MODE:
+            raise ValueError("Please do not instantiate data in protocol definition!")
+
+
+class EventMeta(ABCMeta):
+    R: type[Relation]
+
+    def __matmul__(self, other: Sequence[Term]) -> Relation:
+        return self.R(*other)
+
+
+class Event(metaclass=EventMeta):
+    class R(Relation):
+        ...
+
 
 RELATIONS = []
+
+
+@dataclass
+class Goal(Relation):
+    pass
 
 
 @dataclass
@@ -94,7 +123,7 @@ class Rule:
 
     def dl_repr(self) -> str:
         rhs = [r.dl_repr() for r in self.body]
-        return self.head.dl_repr() + " :-\n  " + ",\n  ".join(rhs)
+        return self.head.dl_repr() + " :-\n  " + ",\n  ".join(rhs) + "."
 
 
 RULES: list[Rule] = []
@@ -111,7 +140,7 @@ def precondition(pc: Callable):
         if len(pc_params) != len(func_params) + 1:
             raise ValueError("Precondition length does not match function length + 1")
 
-        ars = []
+        args = []
         for pp, fp in zip(pc_params, func_params):
             if pp.name != fp.name:
                 raise ValueError(
@@ -123,7 +152,7 @@ def precondition(pc: Callable):
                     "Precondition parameter type does not match function parameter type"
                 )
 
-            ars.append(pp.annotation.full(f"{fp.name}."))
+            args.append(pp.annotation.free(f"{fp.name}."))
 
         if pc_params[-1].name != "ret":
             raise ValueError("Precondition last parameter name not 'ret'")
@@ -133,13 +162,13 @@ def precondition(pc: Callable):
                 "Precondition last parameter type does not match function return type"
             )
 
-        ars.append(pc_params[-1].annotation.full("ret."))
+        args.append(pc_params[-1].annotation.free("ret."))
 
         RULES.append(
             Rule(
                 name=func.__name__,
-                head=ars[-1],
-                body=pc(*ars),
+                head=args[-1],
+                body=args[:-1] + pc(*args),
             )
         )
 
@@ -148,7 +177,7 @@ def precondition(pc: Callable):
     return wrapper
 
 
-def dl_header() -> str:
+def dl_compile() -> str:
     blocks = []
 
     for rel in RELATIONS:
@@ -159,8 +188,31 @@ def dl_header() -> str:
     blocks.append("")
 
     for rule in RULES:
-        rule_repr = rule.dl_repr()
-        if rule_repr:
-            blocks.append(rule_repr)
+        blocks.append(rule.dl_repr())
+
+    blocks.append("")
+
+    for fact in TRACE:
+        blocks.append(fact.dl_repr() + ".")
+
+    blocks.append("")
+
+    if QOI:
+        goal = Goal()
+        blocks.append(Rule("goal", goal, [QOI]).dl_repr())
+        blocks.append("")
+        blocks.append(f".output {goal.name()}")
 
     return "\n".join(blocks)
+
+
+def begin() -> None:
+    global USER_MODE
+    USER_MODE = True
+
+
+def end(qoi_relation: Relation) -> None:
+    global USER_MODE, QOI
+    USER_MODE = False
+    QOI = qoi_relation
+    del TRACE[-1]

@@ -129,7 +129,7 @@ class TCRelation(Relation):
 
 
 @dataclass
-class Transfect(Data):
+class Transfect(Event):
     library: str
 
     class R(TCRelation):
@@ -137,7 +137,7 @@ class Transfect(Data):
 
 
 @dataclass
-class Seq(Data):
+class Seq(Event):
     results: str
 
     class R(TCRelation):
@@ -164,7 +164,7 @@ def pc(tr: Transfect.R, s1: Seq.R, s2: Seq.R, ret: SGRE.R) -> list[Relation]:
     return [
         tr.t < s1.t,
         s1.t < s2.t,
-        tr.t.uniq(),
+        # tr.t.uniq(),
         ret.ti == s1.t,
         ret.tf == s2.t,
         tr.c == s1.c,
