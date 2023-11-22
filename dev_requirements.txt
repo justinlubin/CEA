@@ -1,5 +1,5 @@
 rope
-pyflakes
+flake8
 black
 pylsp-mypy
 python-lsp-server

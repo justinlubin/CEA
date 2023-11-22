@@ -1,7 +1,4 @@
-import src.cea.math as m
+import src.cea.framework as fw
+import src.cea.library  # noqa: F401
 
-import sys
-
-print("Inc of 3 is", m.inc(3))
-
-sys.exit(1)
+print(fw.RULES[0])
