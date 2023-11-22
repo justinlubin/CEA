@@ -21,12 +21,13 @@ class Time(Term):
     def var(cls, name: str) -> Var:
         return TimeVar(name)
 
+    @classmethod
+    def dl_type(cls) -> str:
+        return "number"
 
-class TimeVar(Time, Var):
-    name: str
 
-    def __init__(self, name: str):
-        self.name = name
+class TimeVar(Var, Time):
+    pass
 
 
 class TimeLit(Time):
@@ -37,17 +38,34 @@ class TimeLit(Time):
             raise ValueError("Negative day")
         self.day = day
 
+    def dl_repr(self) -> str:
+        return str(self.day)
+
 
 @dataclass
 class TimeEq(Relation):
     lhs: Time
     rhs: Time
 
+    @classmethod
+    def dl_decl(cls) -> Optional[str]:
+        return None
+
+    def dl_repr(self) -> str:
+        return f"{self.lhs.dl_repr()} = {self.rhs.dl_repr()}"
+
 
 @dataclass
 class TimeLt(Relation):
     lhs: Time
     rhs: Time
+
+    @classmethod
+    def dl_decl(cls) -> Optional[str]:
+        return None
+
+    def dl_repr(self) -> str:
+        return f"{self.lhs.dl_repr()} < {self.rhs.dl_repr()}"
 
 
 @dataclass
@@ -66,25 +84,34 @@ class Cond(Term, metaclass=ABCMeta):
     def var(cls, name: str) -> Var:
         return CondVar(name)
 
-
-class CondVar(Cond, Var):
-    name: str
-
-    def __init__(self, name: str) -> None:
-        self.name = name
+    @classmethod
+    def dl_type(cls) -> str:
+        return "symbol"
 
 
+class CondVar(Var, Cond):
+    pass
+
+
+@dataclass
 class CondLit(Cond):
     cond: str
 
-    def __init__(self, cond: str) -> None:
-        self.cond = cond
+    def dl_repr(self) -> str:
+        return f'"{self.cond}"'
 
 
 @dataclass
 class CondEq(Relation):
     lhs: Cond
     rhs: Cond
+
+    @classmethod
+    def dl_decl(cls) -> Optional[str]:
+        return None
+
+    def dl_repr(self) -> str:
+        return f"{self.lhs.dl_repr()} = {self.rhs.dl_repr()}"
 
 
 ###############################################################################

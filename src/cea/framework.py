@@ -1,25 +1,52 @@
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import Sequence, Callable, Self
+from typing import Sequence, Callable, Self, Optional
 import inspect
 
 
 class Var(metaclass=ABCMeta):
     name: str
 
+    def __init__(self, name: str) -> None:
+        self.name = name
+
     def __str__(self) -> str:
         return f"${self.name}"
+
+    def dl_repr(self) -> str:
+        return self.name.replace(".", "_")
 
 
 class Term(metaclass=ABCMeta):
     @classmethod
     @abstractmethod
     def var(cls, name: str) -> Var:
-        pass
+        ...
+
+    @classmethod
+    @abstractmethod
+    def dl_type(cls) -> str:
+        ...
+
+    @abstractmethod
+    def dl_repr(self) -> str:
+        ...
 
 
 # __init__ must take a list of Term
 class Relation(metaclass=ABCMeta):
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        RELATIONS.append(cls)
+
+    def __str__(self) -> str:
+        inner = [f"{p.name}={getattr(self, p.name)}" for p in self.arity()]
+        return self.name() + "(" + ", ".join(inner) + ")"
+
+    @classmethod
+    def name(cls) -> str:
+        return cls.__qualname__.replace(".", "_")
+
     @classmethod
     def arity(cls):
         return list(inspect.signature(cls.__init__).parameters.values())[1:]
@@ -28,15 +55,25 @@ class Relation(metaclass=ABCMeta):
     def full(cls, prefix: str) -> Self:
         return cls(*[p.annotation.var(prefix + p.name) for p in cls.arity()])
 
-    def __str__(self) -> str:
-        inner = [f"{p.name}={getattr(self, p.name)}" for p in self.arity()]
-        return self.__class__.__qualname__ + "(" + ", ".join(inner) + ")"
+    @classmethod
+    def dl_decl(cls) -> Optional[str]:
+        inner = [f"{p.name}: {p.annotation.dl_type()}" for p in cls.arity()]
+        return ".decl " + cls.name() + "(" + ", ".join(inner) + ")"
+
+    def dl_repr(self) -> str:
+        inner = [getattr(self, p.name).dl_repr() for p in self.arity()]
+        return self.name() + "(" + ", ".join(inner) + ")"
+
+
+RELATIONS: list[Relation] = []
 
 
 class Data(metaclass=ABCMeta):
-    @dataclass
     class R(Relation):
-        pass
+        ...
+
+
+RELATIONS = []
 
 
 @dataclass
@@ -54,6 +91,10 @@ class Rule:
             + "\n=============================="
             + "=" * (len(self.name) + 2)
         )
+
+    def dl_repr(self) -> str:
+        rhs = [r.dl_repr() for r in self.body]
+        return self.head.dl_repr() + " :-\n  " + ",\n  ".join(rhs)
 
 
 RULES: list[Rule] = []
@@ -105,3 +146,21 @@ def precondition(pc: Callable):
         return func
 
     return wrapper
+
+
+def dl_header() -> str:
+    blocks = []
+
+    for rel in RELATIONS:
+        rel_decl = rel.dl_decl()
+        if rel_decl:
+            blocks.append(rel_decl)
+
+    blocks.append("")
+
+    for rule in RULES:
+        rule_repr = rule.dl_repr()
+        if rule_repr:
+            blocks.append(rule_repr)
+
+    return "\n".join(blocks)
