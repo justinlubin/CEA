@@ -1,9 +1,25 @@
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import Sequence, Callable, Self, Optional
+from typing import Sequence, Callable, Self, Optional, ClassVar
 import inspect
 
-USER_MODE: bool = False
+# Globals
+
+
+class Globals:
+    _relations: ClassVar[list["Relation"]] = []
+    _rules: ClassVar[list["Rule"]] = []
+
+    @staticmethod
+    def defined_relations():
+        return Globals._relations.copy()
+
+    @staticmethod
+    def defined_rules():
+        return Globals._rules.copy()
+
+
+# Variables and terms
 
 
 class Var(metaclass=ABCMeta):
@@ -35,19 +51,23 @@ class Term(metaclass=ABCMeta):
         ...
 
 
-# __init__ must take a list of Term
-class Relation(metaclass=ABCMeta):
+# Relations
+
+Relation = type["Atom"]
+
+
+class Atom(metaclass=ABCMeta):
+    """___init___ must take a list of Term."""
+
+    # @abstractmethod
+    # def __init__(self) -> None:
+    #     ...
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        RELATIONS.append(cls)
+        Globals._relations.append(cls)
 
-    def __post_init__(self) -> None:
-        if USER_MODE:
-            TRACE.append(self)
-
-    def __str__(self) -> str:
-        inner = [f"{p.name}={getattr(self, p.name)}" for p in self.arity()]
-        return self.name() + "(" + ", ".join(inner) + ")"
+    # Relation methods
 
     @classmethod
     def name(cls) -> str:
@@ -66,50 +86,50 @@ class Relation(metaclass=ABCMeta):
         inner = [f"{p.name}: {p.annotation.dl_type()}" for p in cls.arity()]
         return ".decl " + cls.name() + "(" + ", ".join(inner) + ")"
 
+    # Atom methods
+
+    def __str__(self) -> str:
+        inner = [f"{p.name}={getattr(self, p.name)}" for p in self.arity()]
+        return self.name() + "(" + ", ".join(inner) + ")"
+
     def dl_repr(self) -> str:
         inner = [getattr(self, p.name).dl_repr() for p in self.arity()]
         return self.name() + "(" + ", ".join(inner) + ")"
 
 
-RELATIONS: list[type[Relation]] = []
-TRACE: list[Relation] = []
-QOI: Optional[Relation] = None
+# Observations
 
 
-class Data(metaclass=ABCMeta):
-    class R(Relation):
-        ...
+# class ObservationMeta(ABCMeta):
+#     M: type[Relation]
+#
+#     def __matmul__(self, other: Sequence[Term]) -> Relation:
+#         return self.M(*other)
+#
+#
+# class Observation(metaclass=ABCMeta):
+#     # Metadata
+#     class M(Relation):
+#         ...
+#
+#     # Data
+#     class D:
+#         ...
+#
+#     def __new__(cls, *args, **kwargs):
+#         raise TypeError("Cannot instantiate observation; insantiate M or D instead")
+#
+#
+# _RELATIONS = []
 
-    def __post_init__(self) -> None:
-        if USER_MODE:
-            raise ValueError("Please do not instantiate data in protocol definition!")
-
-
-class EventMeta(ABCMeta):
-    R: type[Relation]
-
-    def __matmul__(self, other: Sequence[Term]) -> Relation:
-        return self.R(*other)
-
-
-class Event(metaclass=EventMeta):
-    class R(Relation):
-        ...
-
-
-RELATIONS = []
-
-
-@dataclass
-class Goal(Relation):
-    pass
+# Rules
 
 
 @dataclass
 class Rule:
     name: str
-    head: Relation
-    body: Sequence[Relation]
+    head: Atom
+    body: Sequence[Atom]
 
     def __str__(self) -> str:
         return (
@@ -124,9 +144,6 @@ class Rule:
     def dl_repr(self) -> str:
         rhs = [r.dl_repr() for r in self.body]
         return self.head.dl_repr() + " :-\n  " + ",\n  ".join(rhs) + "."
-
-
-RULES: list[Rule] = []
 
 
 def precondition(pc: Callable):
@@ -147,7 +164,13 @@ def precondition(pc: Callable):
                     "Precondition parameter name does not match parameter name"
                 )
 
-            if pp.annotation != fp.annotation.R:
+            if not pp.annotation.__qualname__.endswith(".M"):
+                raise ValueError("Precondition parameter type is not a metadata type")
+
+            if not fp.annotation.__qualname__.endswith(".D"):
+                raise ValueError("Function parameter type is not a data type")
+
+            if pp.annotation.__qualname__[:-2] != fp.annotation.__qualname__[:-2]:
                 raise ValueError(
                     "Precondition parameter type does not match function parameter type"
                 )
@@ -157,14 +180,23 @@ def precondition(pc: Callable):
         if pc_params[-1].name != "ret":
             raise ValueError("Precondition last parameter name not 'ret'")
 
-        if pc_params[-1].annotation != func_sig.return_annotation.R:
+        if not pc_params[-1].annotation.__qualname__.endswith(".M"):
+            raise ValueError("Precondition last parameter type is not a metadata type")
+
+        if not func_sig.return_annotation.__qualname__.endswith(".D"):
+            raise ValueError("Function return type is not a data type")
+
+        if (
+            pc_params[-1].annotation.__qualname__[:-2]
+            != func_sig.return_annotation.__qualname__[:-2]
+        ):
             raise ValueError(
                 "Precondition last parameter type does not match function return type"
             )
 
         args.append(pc_params[-1].annotation.free("ret."))
 
-        RULES.append(
+        Globals._rules.append(
             Rule(
                 name=func.__name__,
                 head=args[-1],
@@ -175,44 +207,3 @@ def precondition(pc: Callable):
         return func
 
     return wrapper
-
-
-def dl_compile() -> str:
-    blocks = []
-
-    for rel in RELATIONS:
-        rel_decl = rel.dl_decl()
-        if rel_decl:
-            blocks.append(rel_decl)
-
-    blocks.append("")
-
-    for rule in RULES:
-        blocks.append(rule.dl_repr())
-
-    blocks.append("")
-
-    for fact in TRACE:
-        blocks.append(fact.dl_repr() + ".")
-
-    blocks.append("")
-
-    if QOI:
-        goal = Goal()
-        blocks.append(Rule("goal", goal, [QOI]).dl_repr())
-        blocks.append("")
-        blocks.append(f".output {goal.name()}")
-
-    return "\n".join(blocks)
-
-
-def begin() -> None:
-    global USER_MODE
-    USER_MODE = True
-
-
-def end(qoi_relation: Relation) -> None:
-    global USER_MODE, QOI
-    USER_MODE = False
-    QOI = qoi_relation
-    del TRACE[-1]

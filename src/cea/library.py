@@ -43,7 +43,7 @@ class TimeLit(Time):
 
 
 @dataclass
-class TimeEq(Relation):
+class TimeEq(Atom):
     lhs: Time
     rhs: Time
 
@@ -56,7 +56,7 @@ class TimeEq(Relation):
 
 
 @dataclass
-class TimeLt(Relation):
+class TimeLt(Atom):
     lhs: Time
     rhs: Time
 
@@ -69,7 +69,7 @@ class TimeLt(Relation):
 
 
 @dataclass
-class TimeUnique(Relation):
+class TimeUnique(Atom):
     t: Time
 
 
@@ -93,16 +93,24 @@ class CondVar(Var, Cond):
     pass
 
 
-@dataclass
 class CondLit(Cond):
-    cond: str
+    _counter: ClassVar[int] = 0
+
+    symbol: str
+
+    def __init__(self, symbol: Optional[str] = None) -> None:
+        if symbol:
+            self.symbol = symbol
+        else:
+            self.symbol = f"c{CondLit._counter}"
+            CondLit._counter += 1
 
     def dl_repr(self) -> str:
-        return f'"{self.cond}"'
+        return f'"{self.symbol}"'
 
 
 @dataclass
-class CondEq(Relation):
+class CondEq(Atom):
     lhs: Cond
     rhs: Cond
 
@@ -119,7 +127,7 @@ class CondEq(Relation):
 
 
 @dataclass
-class TCRelation(Relation):
+class TCAtom(Atom):
     t: Time
     c: Cond
 
@@ -128,39 +136,43 @@ class TCRelation(Relation):
 # Data
 
 
-@dataclass
-class Transfect(Event):
-    library: str
-
-    class R(TCRelation):
+class Transfect:
+    class M(TCAtom):
         pass
-
-
-@dataclass
-class Seq(Event):
-    results: str
-
-    class R(TCRelation):
-        pass
-
-
-@dataclass
-class SGRE(Data):
-    fold_change: float
-    sig: float
 
     @dataclass
-    class R(Relation):
+    class D:
+        library: str
+
+
+class Seq:
+    class M(TCAtom):
+        pass
+
+    @dataclass
+    class D:
+        results: str
+
+
+@dataclass
+class SGRE:
+    @dataclass
+    class M(Atom):
         ti: Time
         tf: Time
         c: Cond
+
+    @dataclass
+    class D:
+        fold_change: float
+        sig: float
 
 
 ###############################################################################
 # API
 
 
-def pc(tr: Transfect.R, s1: Seq.R, s2: Seq.R, ret: SGRE.R) -> list[Relation]:
+def pc(tr: Transfect.M, s1: Seq.M, s2: Seq.M, ret: SGRE.M) -> list[Atom]:
     return [
         tr.t < s1.t,
         s1.t < s2.t,
@@ -173,6 +185,20 @@ def pc(tr: Transfect.R, s1: Seq.R, s2: Seq.R, ret: SGRE.R) -> list[Relation]:
     ]
 
 
+# @precondition(
+#     lambda tr, s1, s2, ret: [
+#         tr.t < s1.t,
+#         s1.t < s2.t,
+#         # tr.t.uniq(),
+#         ret.ti == s1.t,
+#         ret.tf == s2.t,
+#         tr.c == s1.c,
+#         tr.c == s2.c,
+#         tr.c == ret.c,
+#     ]
+# )
+
+
 @precondition(pc)
-def sgre(tr: Transfect, s1: Seq, s2: Seq) -> SGRE:
-    return SGRE(2, 0.03)
+def sgre(tr: Transfect.D, s1: Seq.D, s2: Seq.D) -> SGRE.D:
+    return SGRE.D(2, 0.03)
