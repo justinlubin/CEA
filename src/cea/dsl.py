@@ -5,6 +5,7 @@ from typing import Optional
 
 from . import framework as fw
 from . import library as lib
+from . import souffle
 
 
 @dataclass
@@ -14,18 +15,10 @@ class Goal(fw.Atom):
 
 class Program:
     _trace: list[fw.Atom]
-    # _relations: list[fw.Relation]
-    # _rules: list[fw.Rule]
     _qoi: Optional[fw.Atom]
 
-    def __init__(
-        self,
-        # relations: list[fw.Relation],
-        # rules: list[fw.Rule],
-    ) -> None:
+    def __init__(self) -> None:
         self._trace = []
-        # self._relations = relations
-        # self._rules = rules
 
     def _save_relation(self, Rel: fw.Relation, args: list[fw.Term]) -> "Program":
         def wrap(a):
@@ -51,8 +44,15 @@ class Program:
 
         return lambda *args: self._save_relation(selected_rel, args)
 
-    def qoi(self) -> None:
+    def qoi(self, run=True) -> None:
         self._qoi = self._trace.pop()
+
+        if run:
+            output = souffle.run(self.dl_repr())
+            if output["Goal"]:
+                print("Possible!")
+            else:
+                print("Not possible!")
 
     def dl_repr(self) -> str:
         if not self._qoi:
@@ -64,6 +64,7 @@ class Program:
             rel_decl = rel.dl_decl()
             if rel_decl:
                 blocks.append(rel_decl)
+                blocks.append(f".output {rel.name()}")
 
         blocks.append("")
 
@@ -83,14 +84,3 @@ class Program:
         blocks.append(f".output {goal.name()}")
 
         return "\n".join(blocks)
-
-        # def condition(self) -> lib.CondLit:
-        #     return lib.CondLit()
-
-        # def transfect(self, day: int, condition: lib.Cond) -> None:
-        #     self._trace.append(lib.Transfect.M(lib.TimeLit(day), condition))
-
-        # def seq(self, day: int, condition: lib.Cond) -> None:
-        #     self._trace.append(lib.Transfect.M(lib.TimeLit(day), condition))
-
-        # algo

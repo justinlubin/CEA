@@ -136,7 +136,7 @@ class TCAtom(Atom):
 # Data
 
 
-class Transfect:
+class Infect:
     class M(TCAtom):
         pass
 
@@ -155,7 +155,7 @@ class Seq:
 
 
 @dataclass
-class SGRE:
+class PhenotypeScore:
     @dataclass
     class M(Atom):
         ti: Time
@@ -172,7 +172,7 @@ class SGRE:
 # API
 
 
-def pc(tr: Transfect.M, s1: Seq.M, s2: Seq.M, ret: SGRE.M) -> list[Atom]:
+def pc(tr: Infect.M, s1: Seq.M, s2: Seq.M, ret: PhenotypeScore.M) -> list[Atom]:
     return [
         tr.t < s1.t,
         s1.t < s2.t,
@@ -185,20 +185,6 @@ def pc(tr: Transfect.M, s1: Seq.M, s2: Seq.M, ret: SGRE.M) -> list[Atom]:
     ]
 
 
-# @precondition(
-#     lambda tr, s1, s2, ret: [
-#         tr.t < s1.t,
-#         s1.t < s2.t,
-#         # tr.t.uniq(),
-#         ret.ti == s1.t,
-#         ret.tf == s2.t,
-#         tr.c == s1.c,
-#         tr.c == s2.c,
-#         tr.c == ret.c,
-#     ]
-# )
-
-
 @precondition(pc)
-def sgre(tr: Transfect.D, s1: Seq.D, s2: Seq.D) -> SGRE.D:
-    return SGRE.D(2, 0.03)
+def sgre(tr: Infect.D, s1: Seq.D, s2: Seq.D) -> PhenotypeScore.D:
+    return ...  # type: ignore

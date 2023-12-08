@@ -1,14 +1,10 @@
-import src.cea.dsl as dsl
+import cea.dsl
 
-p = dsl.Program()
+p = cea.dsl.Program()
+c = p.Condition()
 
-c1 = p.Condition()
-c2 = p.Condition()
+p.Infect(1, c)
+p.Seq(3, c)
+p.Seq(8, c)
 
-p.Transfect(1, c1)
-p.Transfect(1, c2)
-
-for d in [3, 5, 7]:
-    p.Seq(d, c1)
-
-p.SGRE(3, 5, c1).qoi()
+p.PhenotypeScore(3, 8, c).qoi()
