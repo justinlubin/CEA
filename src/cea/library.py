@@ -151,7 +151,7 @@ class Seq:
 
     @dataclass
     class D:
-        results: str
+        path: str
 
 
 @dataclass
@@ -164,27 +164,62 @@ class PhenotypeScore:
 
     @dataclass
     class D:
-        fold_change: float
-        sig: float
+        fold_change: list[float]
+        sig: list[float]
 
 
 ###############################################################################
 # API
 
 
-def pc(tr: Infect.M, s1: Seq.M, s2: Seq.M, ret: PhenotypeScore.M) -> list[Atom]:
+def pc(
+    infection: Infect.M,
+    seq1: Seq.M,
+    seq2: Seq.M,
+    ret: PhenotypeScore.M,
+) -> list[Atom]:
     return [
-        tr.t < s1.t,
-        s1.t < s2.t,
-        # tr.t.uniq(),
-        ret.ti == s1.t,
-        ret.tf == s2.t,
-        tr.c == s1.c,
-        tr.c == s2.c,
-        tr.c == ret.c,
+        infection.t < seq1.t,
+        seq1.t < seq2.t,
+        ret.ti == seq1.t,
+        ret.tf == seq2.t,
+        infection.c == seq1.c,
+        infection.c == seq2.c,
+        infection.c == ret.c,
     ]
 
 
 @precondition(pc)
-def sgre(tr: Infect.D, s1: Seq.D, s2: Seq.D) -> PhenotypeScore.D:
-    return ...  # type: ignore
+def ttest_enrichment(
+    infection: Infect.D,
+    seq1: Seq.D,
+    seq2: Seq.D,
+) -> PhenotypeScore.D:
+    with open(infection.library, "r") as lib_file:
+        lib = lib_file.read()
+
+    with open(seq1.path, "r") as seq1_file:
+        fasta1 = seq1_file.read()
+
+    with open(seq2.path, "r") as seq2_file:
+        fasta2 = seq2_file.read()
+
+    count_matrix = make_count_matrix(lib, fasta1, fasta2)  # type: ignore
+    fold_change = []
+    sig = []
+    for gene, before_count, after_count in count_matrix:
+        tvalue, pvalue = scipy.stats.ttest_ind(...)  # type: ignore
+        fold_change.append(tvalue)
+        sig.append(pvalue)
+    return PhenotypeScore.D(fold_change, sig)
+
+
+@precondition(pc)
+def mageck_enrichment(
+    infection: Infect.D,
+    seq1: Seq.D,
+    seq2: Seq.D,
+) -> PhenotypeScore.D:
+    mageck_output = subprocess.check_output(["mageck", ...])  # type: ignore
+    fold_change, sig = parse_mageck_output(mageck_output)  # type: ignore
+    return PhenotypeScore.D(fold_change, sig)

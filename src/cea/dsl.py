@@ -42,7 +42,7 @@ class Program:
         if not selected_rel:
             raise ValueError(f"Relation not found: {attr}")
 
-        return lambda *args: self._save_relation(selected_rel, args)
+        return lambda *args, **kwargs: self._save_relation(selected_rel, args)
 
     def qoi(self, run=True) -> None:
         self._qoi = self._trace.pop()
