@@ -11,4 +11,4 @@ p.Infect(1, c2, library="lib2.csv")
 for d in [3, 5, 7]:
     p.Seq(d, c1, path=f"day{d}.fasta")
 
-p.PhenotypeScore(3, 5, c1).qoi()
+p.PhenotypeScore(3, 5, c1).query()

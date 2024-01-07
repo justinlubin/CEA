@@ -44,7 +44,7 @@ class Program:
 
         return lambda *args, **kwargs: self._save_relation(selected_rel, args)
 
-    def qoi(self, run=True) -> None:
+    def query(self, run=True) -> None:
         self._qoi = self._trace.pop()
 
         if run:
