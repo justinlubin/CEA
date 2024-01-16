@@ -57,11 +57,7 @@ Relation = type["Atom"]
 
 
 class Atom(metaclass=ABCMeta):
-    """___init___ must take a list of Term."""
-
-    # @abstractmethod
-    # def __init__(self) -> None:
-    #     ...
+    """Subclass ___init___ must take a list of Term (not checked)."""
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -97,37 +93,12 @@ class Atom(metaclass=ABCMeta):
         return self.name() + "(" + ", ".join(inner) + ")"
 
 
-# Observations
-
-
-# class ObservationMeta(ABCMeta):
-#     M: type[Relation]
-#
-#     def __matmul__(self, other: Sequence[Term]) -> Relation:
-#         return self.M(*other)
-#
-#
-# class Observation(metaclass=ABCMeta):
-#     # Metadata
-#     class M(Relation):
-#         ...
-#
-#     # Data
-#     class D:
-#         ...
-#
-#     def __new__(cls, *args, **kwargs):
-#         raise TypeError("Cannot instantiate observation; insantiate M or D instead")
-#
-#
-# _RELATIONS = []
-
 # Rules
 
 
 @dataclass
 class Rule:
-    name: str
+    fn: Callable
     head: Atom
     body: Sequence[Atom]
 
@@ -138,8 +109,11 @@ class Rule:
             + "\n--------------------\n"
             + str(self.head)
             + "\n=============================="
-            + "=" * (len(self.name) + 2)
+            + "=" * (len(self.name()) + 2)
         )
+
+    def name(self) -> str:
+        return self.fn.__name__
 
     def dl_repr(self) -> str:
         rhs = [r.dl_repr() for r in self.body]
@@ -198,7 +172,7 @@ def precondition(pc: Callable):
 
         Globals._rules.append(
             Rule(
-                name=func.__name__,
+                fn=func,
                 head=args[-1],
                 body=args[:-1] + pc(*args),
             )

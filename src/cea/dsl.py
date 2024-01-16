@@ -9,8 +9,17 @@ from . import souffle
 
 
 @dataclass
-class Goal(fw.Atom):
-    pass
+class Goal:
+    class M(fw.Atom):
+        pass
+
+    @dataclass
+    class D:
+        pass
+
+
+def goal_fn() -> Goal.D:
+    return Goal.D()
 
 
 class Program:
@@ -49,6 +58,7 @@ class Program:
 
         if run:
             output = souffle.run(self.dl_repr())
+            print(output)
             if output["Goal"]:
                 print("Possible!")
             else:
@@ -78,9 +88,9 @@ class Program:
 
         blocks.append("")
 
-        goal = Goal()
-        blocks.append(fw.Rule("goal", goal, [self._qoi]).dl_repr())
+        goal_atom = Goal.M()
+        blocks.append(fw.Rule(goal_fn, goal_atom, [self._qoi]).dl_repr())
         blocks.append("")
-        blocks.append(f".output {goal.name()}")
+        blocks.append(f".output {goal_atom.name()}")
 
         return "\n".join(blocks)
