@@ -18,7 +18,7 @@ class Time(Term):
         return TimeUnique(self)
 
     @classmethod
-    def var(cls, name: str) -> Var:
+    def var(cls, name: str) -> "TimeVar":
         return TimeVar(name)
 
     @classmethod
@@ -81,7 +81,7 @@ class Cond(Term, metaclass=ABCMeta):
         return CondEq(self, other)
 
     @classmethod
-    def var(cls, name: str) -> Var:
+    def var(cls, name: str) -> "CondVar":
         return CondVar(name)
 
     @classmethod
@@ -223,3 +223,29 @@ def mageck_enrichment(
     mageck_output = subprocess.check_output(["mageck", ...])  # type: ignore
     fold_change, sig = parse_mageck_output(mageck_output)  # type: ignore
     return PhenotypeScore.D(fold_change, sig)
+
+
+def pc_wrong(
+    infection: Infect.M,
+    seq1: Seq.M,
+    seq2: Seq.M,
+    ret: PhenotypeScore.M,
+) -> list[Atom]:
+    return [
+        infection.t > seq1.t,
+        seq1.t < seq2.t,
+        ret.ti == seq1.t,
+        ret.tf == seq2.t,
+        infection.c == seq1.c,
+        infection.c == seq2.c,
+        infection.c == ret.c,
+    ]
+
+
+@precondition(pc_wrong)
+def wrong_fn(
+    infection: Infect.D,
+    seq1: Seq.D,
+    seq2: Seq.D,
+) -> PhenotypeScore.D:
+    return ...  # type: ignore

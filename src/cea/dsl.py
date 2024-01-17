@@ -60,10 +60,12 @@ class Program:
         if run:
             program = self.dl_repr()
             output = souffle.run(program)
-            if True or output.facts[Goal.M.name()]:
-                print(output)
+            print(program)
+            print()
+            if output.facts[Goal.M.name()]:
+                print(">>> Possible! <<<")
             else:
-                print("Not possible!")
+                print(">>> Not possible! <<<")
 
     def dl_repr(self) -> str:
         if not self._qoi:
@@ -75,16 +77,15 @@ class Program:
             rel_decl = rel.dl_decl()
             if rel_decl:
                 blocks.append(rel_decl)
-                blocks.append(f".output {rel.name()}")
-                blocks.append("")
 
+        blocks.append("")
+        blocks.append(f".output {Goal.M.name()}")
         blocks.append("")
 
         for rule in fw.Globals.defined_rules():
+            blocks.append(f"// {rule.fn.__name__}")
             blocks.append(rule.dl_repr())
             blocks.append("")
-
-        blocks.append("")
 
         for fact in self._trace:
             blocks.append(fact.dl_repr() + ".")

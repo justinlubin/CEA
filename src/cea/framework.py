@@ -24,7 +24,26 @@ class Globals:
 # Variables and terms
 
 
-class Var(metaclass=ABCMeta):
+class Term(metaclass=ABCMeta):
+    @classmethod
+    @abstractmethod
+    def var(cls, name: str) -> "Var":
+        ...
+
+    @classmethod
+    @abstractmethod
+    def dl_type(cls) -> str:
+        ...
+
+    @abstractmethod
+    def dl_repr(self) -> str:
+        ...
+
+    def substitute(self, lhs: str, rhs: "Term") -> "Term":
+        return self
+
+
+class Var(Term):
     name: str
 
     def __init__(self, name: str) -> None:
@@ -36,21 +55,11 @@ class Var(metaclass=ABCMeta):
     def dl_repr(self) -> str:
         return self.name.replace(".", "_")
 
-
-class Term(metaclass=ABCMeta):
-    @classmethod
-    @abstractmethod
-    def var(cls, name: str) -> Var:
-        ...
-
-    @classmethod
-    @abstractmethod
-    def dl_type(cls) -> str:
-        ...
-
-    @abstractmethod
-    def dl_repr(self) -> str:
-        ...
+    def substitute(self, lhs: str, rhs: Term) -> Term:
+        if lhs == self.name:
+            return rhs
+        else:
+            return self
 
 
 # Relations
@@ -93,6 +102,12 @@ class Atom(metaclass=ABCMeta):
     def dl_repr(self) -> str:
         inner = [getattr(self, p.name).dl_repr() for p in self.arity()]
         return self.name() + "(" + ", ".join(inner) + ")"
+
+    def substitute(self: Self, lhs: str, rhs: Term) -> Self:
+        # Unsafe, since .subsitute returns a generic Term
+        return type(self)(
+            *[getattr(self, p.name).substitute(lhs, rhs) for p in self.arity()]
+        )
 
 
 # Rules

@@ -2,8 +2,28 @@ import tempfile
 import subprocess
 import os
 
+from dataclasses import dataclass
 
-def run(program: str) -> dict[str, list[tuple[str, ...]]]:
+
+@dataclass
+class DatalogOutput:
+    facts: dict[str, list[tuple[str, ...]]]
+
+    def dl_repr(self) -> str:
+        def wrap(arg: str):
+            try:
+                return str(int(arg))
+            except ValueError:
+                return '"' + arg + '"'
+
+        ret = []
+        for rel_name, atoms in self.facts.items():
+            for args in atoms:
+                ret.append(f"{rel_name}({', '.join(map(wrap, args))}).")
+        return "\n".join(ret)
+
+
+def run(program: str) -> DatalogOutput:
     with tempfile.TemporaryDirectory() as tmp_dirname:
         program_filename = tmp_dirname + "/program.dl"
         with open(program_filename, "w") as f:
@@ -26,4 +46,4 @@ def run(program: str) -> dict[str, list[tuple[str, ...]]]:
                         facts[rel_name].append(())
                     else:
                         facts[rel_name].append(tuple(stripped_line.split("\t")))
-        return facts
+        return DatalogOutput(facts)
