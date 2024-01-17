@@ -2,25 +2,6 @@ import tempfile
 import subprocess
 import os
 
-# @dataclass
-# class DatalogOutput:
-#     facts: dict[str, dict[str, list[tuple[str, ...]]]]
-#
-#     def dl_repr(self) -> str:
-#         def wrap(arg: str):
-#             try:
-#                 return str(int(arg))
-#             except ValueError:
-#                 return '"' + arg + '"'
-#
-#         ret = []
-#         for rel_name, fn_facts in self.facts.items():
-#             for fn_name, atoms in fn_facts.items():
-#                 suffix = "" if fn_name == "#" else f"{rel_name}__{fn_name}"
-#                 for args in atoms:
-#                     ret.append(f"{rel_name}{suffix}({', '.join(map(wrap, args))}).")
-#         return "\n".join(ret)
-
 
 def run(program: str) -> dict[str, list[tuple[str, ...]]]:
     with tempfile.TemporaryDirectory() as tmp_dirname:
