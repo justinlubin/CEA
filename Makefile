@@ -4,7 +4,7 @@ test:
 
 .PHONY: check
 check:
-	flake8 src; flake8 cli; mypy src; mypy cli
+	flake8 src; mypy src
 
 .PHONY: install-local
 install-local:

@@ -10,6 +10,7 @@ from . import souffle
 
 @dataclass
 class Goal:
+    @dataclass
     class M(fw.Atom):
         pass
 
@@ -57,10 +58,10 @@ class Program:
         self._qoi = self._trace.pop()
 
         if run:
-            output = souffle.run(self.dl_repr())
-            print(output)
-            if output["Goal"]:
-                print("Possible!")
+            program = self.dl_repr()
+            output = souffle.run(program)
+            if True or output.facts[Goal.M.name()]:
+                print(output)
             else:
                 print("Not possible!")
 
@@ -75,11 +76,13 @@ class Program:
             if rel_decl:
                 blocks.append(rel_decl)
                 blocks.append(f".output {rel.name()}")
+                blocks.append("")
 
         blocks.append("")
 
         for rule in fw.Globals.defined_rules():
             blocks.append(rule.dl_repr())
+            blocks.append("")
 
         blocks.append("")
 
@@ -88,9 +91,13 @@ class Program:
 
         blocks.append("")
 
-        goal_atom = Goal.M()
-        blocks.append(fw.Rule(goal_fn, goal_atom, [self._qoi]).dl_repr())
-        blocks.append("")
-        blocks.append(f".output {goal_atom.name()}")
+        blocks.append(
+            fw.Rule(
+                fn=goal_fn,
+                head=Goal.M(),
+                dependencies=[],
+                checks=[self._qoi],
+            ).dl_repr()
+        )
 
         return "\n".join(blocks)

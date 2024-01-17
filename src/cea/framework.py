@@ -1,7 +1,9 @@
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import Sequence, Callable, Self, Optional, ClassVar
+from typing import Callable, Self, Optional, ClassVar
 import inspect
+
+from . import util
 
 # Globals
 
@@ -100,12 +102,13 @@ class Atom(metaclass=ABCMeta):
 class Rule:
     fn: Callable
     head: Atom
-    body: Sequence[Atom]
+    dependencies: list[Atom]
+    checks: list[Atom]
 
     def __str__(self) -> str:
         return (
             f"== {self.name} ============================\n"
-            + "\n".join(map(str, self.body))
+            + "\n".join(map(str, self.body()))
             + "\n--------------------\n"
             + str(self.head)
             + "\n=============================="
@@ -115,9 +118,13 @@ class Rule:
     def name(self) -> str:
         return self.fn.__name__
 
+    def body(self) -> list[Atom]:
+        return self.dependencies + self.checks
+
     def dl_repr(self) -> str:
-        rhs = [r.dl_repr() for r in self.body]
-        return self.head.dl_repr() + " :-\n  " + ",\n  ".join(rhs) + "."
+        lhs = self.head.dl_repr()
+        rhs = ",\n  ".join([r.dl_repr() for r in self.body()]) + "."
+        return f"{lhs} :-\n  {rhs}"
 
 
 def precondition(pc: Callable):
@@ -174,10 +181,88 @@ def precondition(pc: Callable):
             Rule(
                 fn=func,
                 head=args[-1],
-                body=args[:-1] + pc(*args),
+                dependencies=args[:-1],
+                checks=pc(*args),
             )
         )
 
         return func
 
     return wrapper
+
+
+class DerivationTree(metaclass=ABCMeta):
+    @abstractmethod
+    def tree_string(self, depth: int = 0) -> str:
+        ...
+
+    @abstractmethod
+    def goals(self) -> list[tuple[Atom, list[int]]]:
+        ...
+
+    @abstractmethod
+    def replace(
+        self, breadcrumbs: list[int], new_subtree: "DerivationTree"
+    ) -> "DerivationTree":
+        ...
+
+    def __str__(self) -> str:
+        return self.tree_string(depth=0)
+
+
+@dataclass
+class DerivationStep(DerivationTree):
+    fn: Callable
+    consequent: Atom
+    antecedents: list[DerivationTree]
+
+    def tree_string(self, depth: int = 0) -> str:
+        spine = "-" * depth
+        ret = f"{spine} {self.consequent}"
+        for a in self.antecedents:
+            ret += "\n" + a.tree_string(depth=depth)
+        return ret
+
+    def goals(self) -> list[tuple[Atom, list[int]]]:
+        return util.flatten(
+            [
+                [(g, crumbs + [i]) for g, crumbs in a.goals()]
+                for i, a in enumerate(self.antecedents)
+            ]
+        )
+
+    def replace(
+        self, breadcrumbs: list[int], new_subtree: DerivationTree
+    ) -> DerivationTree:
+        if not breadcrumbs:
+            return new_subtree
+        child = breadcrumbs.pop()  # modifies breadcrumbs
+        if child < 0 or child >= len(self.antecedents):
+            raise ValueError("Invalid breadcrumbs for derivation tree")
+        return DerivationStep(
+            fn=self.fn,
+            consequent=self.consequent,
+            antecedents=(
+                self.antecedents[:child]
+                + [self.antecedents[child].replace(breadcrumbs, new_subtree)]
+                + self.antecedents[child + 1 :]
+            ),
+        )
+
+
+@dataclass
+class DerivationGoal(DerivationTree):
+    goal: Atom
+
+    def tree_string(self, depth: int = 0):
+        return "-" * depth + f"{self.goal} *"
+
+    def goals(self) -> list[tuple[Atom, list[int]]]:
+        return [(self.goal, [])]
+
+    def replace(
+        self, breadcrumbs: list[int], new_subtree: DerivationTree
+    ) -> DerivationTree:
+        if not breadcrumbs:
+            return new_subtree
+        raise ValueError("Invalid breadcrumbs for derivation tree")
