@@ -25,7 +25,7 @@ def goal_fn() -> Goal.D:
 
 class Program:
     _trace: list[fw.Atom]
-    _qoi: Optional[fw.Atom]
+    _query: Optional[fw.Atom]
 
     def __init__(self) -> None:
         self._trace = []
@@ -55,7 +55,7 @@ class Program:
         return lambda *args, **kwargs: self._save_relation(selected_rel, args)
 
     def query(self, run=True) -> None:
-        self._qoi = self._trace.pop()
+        self._query = self._trace.pop()
 
         if run:
             program = self.dl_repr()
@@ -68,8 +68,8 @@ class Program:
                 print(">>> Not possible! <<<")
 
     def dl_repr(self) -> str:
-        if not self._qoi:
-            raise ValueError("QOI not set")
+        if not self._query:
+            raise ValueError("Query not set")
 
         blocks = []
 
@@ -97,7 +97,7 @@ class Program:
                 fn=goal_fn,
                 head=Goal.M(),
                 dependencies=[],
-                checks=[self._qoi],
+                checks=[self._query],
             ).dl_repr()
         )
 
