@@ -7,7 +7,29 @@ from .framework import *
 # Time
 
 
+class TimeSort(Sort):
+    @override
+    def dl_repr(self) -> str:
+        return "number"
+
+    @override
+    def parse(self, s: str) -> Term:
+        return TimeLit(int(s))
+
+    @override
+    def var(self, s: str) -> Var:
+        return TimeVar(s)
+
+
+TIME = TimeSort()
+
+
 class Time(Term):
+    @override
+    @classmethod
+    def sort(cls) -> Sort:
+        return TIME
+
     def __eq__(self, other) -> "TimeEq":  # type: ignore[override]
         return TimeEq(self, other)
 
@@ -16,19 +38,6 @@ class Time(Term):
 
     def uniq(self) -> "TimeUnique":
         return TimeUnique(self)
-
-    @classmethod
-    def var(cls, name: str) -> "TimeVar":
-        return TimeVar(name)
-
-    @classmethod
-    def dl_type(cls) -> str:
-        return "number"
-
-    @classmethod
-    # TODO make more robust
-    def parse(cls, s: str) -> Term:
-        return TimeLit.parse(s)
 
 
 class TimeVar(Var, Time):
@@ -43,10 +52,7 @@ class TimeLit(Time):
             raise ValueError("Negative day")
         self.day = day
 
-    @classmethod
-    def parse(cls, s: str) -> Term:
-        return cls(int(s))
-
+    @override
     def dl_repr(self) -> str:
         return str(self.day)
 
@@ -85,22 +91,31 @@ class TimeUnique(Atom):
 # Condition
 
 
-class Cond(Term, metaclass=ABCMeta):
-    def __eq__(self, other) -> "CondEq":  # type: ignore[override]
-        return CondEq(self, other)
-
-    @classmethod
-    def var(cls, name: str) -> "CondVar":
-        return CondVar(name)
-
-    @classmethod
-    def dl_type(cls) -> str:
+class CondSort(Sort):
+    @override
+    def dl_repr(self) -> str:
         return "symbol"
 
+    @override
+    def parse(self, s: str) -> Term:
+        return CondLit(s)
+
+    @override
+    def var(cls, name: str) -> Var:
+        return CondVar(name)
+
+
+COND = CondSort()
+
+
+class Cond(Term):
+    @override
     @classmethod
-    # TODO make more robust
-    def parse(cls, s: str) -> Term:
-        return CondLit.parse(s)
+    def sort(cls) -> Sort:
+        return COND
+
+    def __eq__(self, other) -> "CondEq":  # type: ignore[override]
+        return CondEq(self, other)
 
 
 class CondVar(Var, Cond):
@@ -118,10 +133,6 @@ class CondLit(Cond):
         else:
             self.symbol = f"c{CondLit._counter}"
             CondLit._counter += 1
-
-    @classmethod
-    def parse(cls, s: str) -> Term:
-        return cls(s)
 
     def dl_repr(self) -> str:
         return f'"{self.symbol}"'

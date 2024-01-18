@@ -1,10 +1,17 @@
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import Callable, Self, Optional, ClassVar
+from typing import Callable, ClassVar
+from collections import OrderedDict
+
 import inspect
 
 from . import souffle
 from . import util
+
+
+def override(f):
+    return f
+
 
 # Globals
 
@@ -31,136 +38,231 @@ class Globals:
 # Variables and terms
 
 
-class Term(metaclass=ABCMeta):
-    @classmethod
+class Sort(metaclass=ABCMeta):
+    @abstractmethod
+    def dl_repr(self) -> str:
+        ...
+
+    @abstractmethod
+    def parse(self, s: str) -> "Term":
+        ...
+
     @abstractmethod
     def var(cls, name: str) -> "Var":
         ...
 
-    @classmethod
-    @abstractmethod
-    def dl_type(cls) -> str:
-        ...
 
+class Term(metaclass=ABCMeta):
     @classmethod
     @abstractmethod
-    # TODO: look into making this return type be Self
-    def parse(cls, s: str) -> "Term":
+    def sort(cls) -> Sort:
         ...
 
     @abstractmethod
     def dl_repr(self) -> str:
         ...
 
-    def substitute(self, lhs: str, rhs: "Term") -> "Term":
+    def __str__(self) -> str:
+        return self.dl_repr()
+
+    def substitute(self, lhs: "Var", rhs: "Term") -> "Term":
+        assert lhs.sort() == rhs.sort()
         return self
 
     def free_vars(self) -> set["Var"]:
         return set()
 
-    def __str__(self) -> str:
-        return self.dl_repr()
-
 
 class Var(Term):
-    name: str
+    _name: str
 
-    def __init__(self, name: str) -> None:
-        self.name = name
+    def __init__(self, name: str):
+        self._name = name
 
-    @classmethod
-    def parse(cls, s: str) -> "Term":
-        return cls(s)
-
-    @classmethod
-    def kind(cls) -> type[Term]:
-        for c in cls.__mro__:
-            if c is cls or c is Var:
-                continue
-            if not issubclass(c, Term):
-                continue
-            return c
-        raise ValueError("Non-Term var")
-
-    def __str__(self) -> str:
-        return f"${self.name}"
-
+    @override
     def dl_repr(self) -> str:
-        return self.name.replace(".", "_")
+        return self._name.replace(".", "_")
 
-    def substitute(self, lhs: str, rhs: Term) -> Term:
-        if lhs == self.dl_repr():
+    @override
+    def substitute(self, lhs: "Var", rhs: Term) -> Term:
+        assert lhs.sort() == rhs.sort()
+        if lhs.dl_repr() == self.dl_repr():
+            assert lhs.sort() == self.sort()
             return rhs
         else:
             return self
 
+    @override
     def free_vars(self) -> set["Var"]:
         return {self}
 
     def __hash__(self) -> int:
-        return hash(self.name)
+        return hash(self._name)
+
+    def __str__(self) -> str:
+        return f"${self._name}"
 
 
 # Relations
 
-Relation = type["Atom"]
+# Relation = type["Atom"]
+
+
+Arity = OrderedDict[str, Sort]
+
+
+class Relation(metaclass=ABCMeta):
+    @abstractmethod
+    def name(self) -> str:
+        ...
+
+    @abstractmethod
+    def arity(self) -> Arity:
+        ...
+
+    def dl_repr(self) -> str:
+        return (
+            f".decl {self.name}("
+            + ", ".join(
+                [f"{name}: {sort.dl_repr()}" for name, sort in self.arity().items()]
+            )
+            + ")"
+        )
+
+    def free(self, prefix: str) -> "Atom":
+        return BasicAtom(
+            relation=self,
+            args={name: sort.var(prefix + name) for name, sort in self.arity().items()},
+        )
+
+
+Assignment = dict[Var, Term]
 
 
 class Atom(metaclass=ABCMeta):
-    """Subclass ___init___ must take a list of Term (not checked)."""
+    @abstractmethod
+    def get_arg(self, key: str) -> Term:
+        ...
 
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        Globals._relations.append(cls)
+    @abstractmethod
+    def set_arg(self, key: str, val: Term) -> "Atom":
+        ...
 
-    # Relation methods
-
-    @classmethod
-    def name(cls) -> str:
-        return cls.__qualname__.replace(".", "_")
-
-    @classmethod
-    def arity(cls):
-        return list(inspect.signature(cls.__init__).parameters.values())[1:]
-
-    @classmethod
-    def free(cls, prefix: str) -> Self:
-        return cls(*[p.annotation.var(prefix + p.name) for p in cls.arity()])
-
-    @classmethod
-    def dl_decl(cls) -> Optional[str]:
-        inner = [f"{p.name}: {p.annotation.dl_type()}" for p in cls.arity()]
-        return ".decl " + cls.name() + "(" + ", ".join(inner) + ")"
-
-    # Atom methods
-
-    def __str__(self) -> str:
-        inner = [f"{p.name}={str(getattr(self, p.name))}" for p in self.arity()]
-        return self.name() + "(" + ", ".join(inner) + ")"
-
-    def args(self) -> list[Term]:
-        return [getattr(self, p.name) for p in self.arity()]
+    @abstractmethod
+    def relation(self) -> Relation:
+        ...
 
     def dl_repr(self) -> str:
-        inner = [a.dl_repr() for a in self.args()]
-        return self.name() + "(" + ", ".join(inner) + ")"
+        return (
+            self.relation().name()
+            + "("
+            + ", ".join([self.get_arg(k).dl_repr() for k in self.relation().arity()])
+            + ")"
+        )
 
-    def substitute(self, lhs: str, rhs: Term) -> Self:
-        # Unsafe, since .subsitute returns a generic Term
-        return type(self)(*[a.substitute(lhs, rhs) for a in self.args()])
-
-    def substitute_all(self, subs: dict[str, Term]) -> Self:
+    def substitute(self, lhs: Var, rhs: Term) -> "Atom":
+        assert lhs.sort() == rhs.sort()
         new_atom = self
-        for lhs, rhs in subs.items():
-            new_atom = new_atom.substitute(lhs, rhs)
-        print(subs)
+        for k in self.relation().arity():
+            new_atom = new_atom.set_arg(k, self.get_arg(k).substitute(lhs, rhs))
         return new_atom
 
-    def free_vars(self) -> set["Var"]:
-        return set.union(*[a.free_vars() for a in self.args()])
+    def substitute_all(self, assignment: Assignment) -> "Atom":
+        new_atom = self
+        for lhs, rhs in assignment.items():
+            new_atom = new_atom.substitute(lhs, rhs)
+        return new_atom
 
+    def free_vars(self) -> set[Var]:
+        return set.union(
+            *[self.get_arg(k).free_vars() for k in self.relation().arity()]
+        )
+
+
+class BasicAtom(Atom):
+    _relation: Relation
+    _args: dict[str, Term]
+
+    def __init__(self, relation: Relation, args: dict[str, Term]):
+        ra = relation.arity()
+        assert ra.keys() == args.keys()
+        for k in ra:
+            assert args[k].sort() == ra[k]
+
+        self._relation = relation
+        self._args = args
+
+    @override
+    def get_arg(self, key: str) -> Term:
+        return self._args[key]
+
+    @override
+    def set_arg(self, key: str, val: Term) -> Atom:
+        assert val.sort() == self.relation().arity()[key]
+        new_args = self._args.copy()
+        new_args[key] = val
+        return BasicAtom(self._relation, new_args)
+
+    @override
     def relation(self) -> Relation:
-        return type(self)
+        return self._relation
+
+
+# class Atom(metaclass=ABCMeta):
+#     """Subclass ___init___ must take a list of Term (not checked)."""
+#
+#     def __init_subclass__(cls, **kwargs):
+#         super().__init_subclass__(**kwargs)
+#         Globals._relations.append(cls)
+#
+#     # Relation methods
+#
+#     @classmethod
+#     def name(cls) -> str:
+#         return cls.__qualname__.replace(".", "_")
+#
+#     @classmethod
+#     def arity(cls):
+#         return list(inspect.signature(cls.__init__).parameters.values())[1:]
+#
+#     @classmethod
+#     def free(cls, prefix: str) -> Self:
+#         return cls(*[p.annotation.var(prefix + p.name) for p in cls.arity()])
+#
+#     @classmethod
+#     def dl_decl(cls) -> Optional[str]:
+#         inner = [f"{p.name}: {p.annotation.sort().dl_repr()}" for p in cls.arity()]
+#         return ".decl " + cls.name() + "(" + ", ".join(inner) + ")"
+#
+#     # Atom methods
+#
+#     def __str__(self) -> str:
+#         inner = [f"{p.name}={str(getattr(self, p.name))}" for p in self.arity()]
+#         return self.name() + "(" + ", ".join(inner) + ")"
+#
+#     def args(self) -> list[Term]:
+#         return [getattr(self, p.name) for p in self.arity()]
+#
+#     def dl_repr(self) -> str:
+#         inner = [a.dl_repr() for a in self.args()]
+#         return self.name() + "(" + ", ".join(inner) + ")"
+#
+#     def substitute(self, lhs: str, rhs: Term) -> Self:
+#         # Unsafe, since .subsitute returns a generic Term
+#         return type(self)(*[a.substitute(lhs, rhs) for a in self.args()])
+#
+#     def substitute_all(self, subs: dict[str, Term]) -> Self:
+#         new_atom = self
+#         for lhs, rhs in subs.items():
+#             new_atom = new_atom.substitute(lhs, rhs)
+#         print(subs)
+#         return new_atom
+#
+#     def free_vars(self) -> set["Var"]:
+#         return set.union(*[a.free_vars() for a in self.args()])
+#
+#     def relation(self) -> Relation:
+#         return type(self)
 
 
 # Rules
@@ -278,7 +380,7 @@ class Query:
 
         blocks.append(
             ".decl Goal("
-            + ", ".join([f"{fv.dl_repr()}: {fv.dl_type()}" for fv in free_vars])
+            + ", ".join([f"{fv.dl_repr()}: {fv.sort().dl_repr()}" for fv in free_vars])
             + ")"
         )
         blocks.append(".output Goal")
@@ -294,9 +396,6 @@ class Query:
         return "\n".join(blocks)
 
 
-Assignment = dict[str, Term]
-
-
 @dataclass
 class DatalogProgram:
     edbs: list[Atom]
@@ -305,7 +404,7 @@ class DatalogProgram:
         blocks = []
 
         for rel in Globals.defined_relations():
-            rel_decl = rel.dl_decl()
+            rel_decl = rel.dl_repr()
             if rel_decl:
                 blocks.append(rel_decl)
 
@@ -330,7 +429,7 @@ class DatalogProgram:
         for row in output.facts["Goal"]:
             assignment = {}
             for key, val in zip(query.free_variables(), row):
-                assignment[key.dl_repr()] = key.kind().parse(val)
+                assignment[key.dl_repr()] = key.sort().parse(val)
             assignments.append(assignment)
         print(assignments)
         return assignments
@@ -461,14 +560,16 @@ class CLIDerivationTreeConstructor(DerivationTreeConstructor):
         return assignments[int(input("> "))]
 
     def rule_options(self, goal_atom: Atom, rule: Rule) -> list[Assignment]:
-        if rule.head.relation() is not goal_atom.relation():
+        if rule.head.relation() != goal_atom.relation():
             return []
 
         def make_substitutions(atom: Atom) -> Atom:
             new_atom = atom
-            for lhs_var, rhs in zip(rule.head.args(), goal_atom.args()):
-                assert isinstance(lhs_var, Var)
-                new_atom = new_atom.substitute(lhs_var.name, rhs)
+            for k in rule.head.relation().arity():
+                lhs = rule.head.get_arg(k)
+                assert isinstance(lhs, Var)
+                rhs = goal_atom.get_arg(k)
+                new_atom = new_atom.substitute(lhs, rhs)
             return new_atom
 
         query = Query([make_substitutions(a) for a in rule.dependencies + rule.checks])
