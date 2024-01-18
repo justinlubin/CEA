@@ -1,6 +1,6 @@
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import Callable, Self, Optional, ClassVar, Iterator
+from typing import Callable, Self, Optional, ClassVar
 import inspect
 
 from . import souffle
@@ -42,6 +42,12 @@ class Term(metaclass=ABCMeta):
     def dl_type(cls) -> str:
         ...
 
+    @classmethod
+    @abstractmethod
+    # TODO: look into making this return type be Self
+    def parse(cls, s: str) -> "Term":
+        ...
+
     @abstractmethod
     def dl_repr(self) -> str:
         ...
@@ -62,6 +68,20 @@ class Var(Term):
     def __init__(self, name: str) -> None:
         self.name = name
 
+    @classmethod
+    def parse(cls, s: str) -> "Term":
+        return cls(s)
+
+    @classmethod
+    def kind(cls) -> type[Term]:
+        for c in cls.__mro__:
+            if c is cls or c is Var:
+                continue
+            if not issubclass(c, Term):
+                continue
+            return c
+        raise ValueError("Non-Term var")
+
     def __str__(self) -> str:
         return f"${self.name}"
 
@@ -69,7 +89,7 @@ class Var(Term):
         return self.name.replace(".", "_")
 
     def substitute(self, lhs: str, rhs: Term) -> Term:
-        if lhs == self.name:
+        if lhs == self.dl_repr():
             return rhs
         else:
             return self
@@ -128,6 +148,13 @@ class Atom(metaclass=ABCMeta):
     def substitute(self, lhs: str, rhs: Term) -> Self:
         # Unsafe, since .subsitute returns a generic Term
         return type(self)(*[a.substitute(lhs, rhs) for a in self.args()])
+
+    def substitute_all(self, subs: dict[str, Term]) -> Self:
+        new_atom = self
+        for lhs, rhs in subs.items():
+            new_atom = new_atom.substitute(lhs, rhs)
+        print(subs)
+        return new_atom
 
     def free_vars(self) -> set["Var"]:
         return set.union(*[a.free_vars() for a in self.args()])
@@ -267,6 +294,9 @@ class Query:
         return "\n".join(blocks)
 
 
+Assignment = dict[str, Term]
+
+
 @dataclass
 class DatalogProgram:
     edbs: list[Atom]
@@ -293,14 +323,14 @@ class DatalogProgram:
 
         return "\n".join(blocks)
 
-    def run(self, query: Query) -> list[dict[str, str]]:
+    def run(self, query: Query) -> list[Assignment]:
         dl_prog = self.dl_repr() + "\n" + query.dl_repr()
         output = souffle.run(dl_prog)
         assignments = []
         for row in output.facts["Goal"]:
             assignment = {}
             for key, val in zip(query.free_variables(), row):
-                assignment[key.dl_repr()] = val
+                assignment[key.dl_repr()] = key.kind().parse(val)
             assignments.append(assignment)
         print(assignments)
         return assignments
@@ -392,15 +422,17 @@ class DerivationTreeConstructor(metaclass=ABCMeta):
         ...
 
     @abstractmethod
-    def select_rule(self, rules: list[tuple[Rule, list[dict[str, str]]]]) -> Rule:
+    def select_rule(
+        self, rules: list[tuple[Rule, list[Assignment]]]
+    ) -> tuple[Rule, list[Assignment]]:
         ...
 
     @abstractmethod
-    def select_assignment(self, assignments):
+    def select_assignment(self, assignments: list[Assignment]) -> Assignment:
         ...
 
     @abstractmethod
-    def rule_options(self, goal_atom: Atom, rule: Rule) -> list[dict[str, str]]:
+    def rule_options(self, goal_atom: Atom, rule: Rule) -> list[Assignment]:
         ...
 
 
@@ -414,19 +446,21 @@ class CLIDerivationTreeConstructor(DerivationTreeConstructor):
             print(f"{i}. {g} (bc: {bc})")
         return goals[int(input("> "))]
 
-    def select_rule(self, rules: list[tuple[Rule, list[dict[str, str]]]]):
+    def select_rule(
+        self, rules: list[tuple[Rule, list[Assignment]]]
+    ) -> tuple[Rule, list[Assignment]]:
         print(f"Select a rule to use (0-{len(rules) - 1}):")
         for i, (r, a) in enumerate(rules):
             print(f"{i}. {r.name()} - {a}")
         return rules[int(input("> "))]
 
-    def select_assignment(self, assignments):
+    def select_assignment(self, assignments: list[Assignment]) -> Assignment:
         print(f"Select an assignment to use (0-{len(assignments)-1}):")
         for i, a in enumerate(assignments):
             print(f"{i}. {a}")
-        return int(input("> "))
+        return assignments[int(input("> "))]
 
-    def rule_options(self, goal_atom: Atom, rule: Rule) -> list[dict[str, str]]:
+    def rule_options(self, goal_atom: Atom, rule: Rule) -> list[Assignment]:
         if rule.head.relation() is not goal_atom.relation():
             return []
 
@@ -442,12 +476,25 @@ class CLIDerivationTreeConstructor(DerivationTreeConstructor):
 
 
 def construct(ctor: DerivationTreeConstructor, initial_goal: Atom) -> DerivationTree:
-    dt = DerivationGoal(goal=initial_goal)
+    dt: DerivationTree = DerivationGoal(goal=initial_goal)
     while True:
+        print(dt.tree_string())
         subgoals = dt.goals()
         if not subgoals:
             return dt
         goal_atom, goal_bc = ctor.select_goal(subgoals)
-        selected_rule = ctor.select_rule(
+        selected_rule, possible_assignments = ctor.select_rule(
             [(r, ctor.rule_options(goal_atom, r)) for r in Globals.defined_rules()]
+        )
+        selected_assignment = ctor.select_assignment(possible_assignments)
+        dt = dt.replace(
+            goal_bc,
+            DerivationStep(
+                fn=selected_rule.fn,
+                consequent=goal_atom,
+                antecedents=[
+                    DerivationGoal(a.substitute_all(selected_assignment))
+                    for a in selected_rule.dependencies
+                ],
+            ),
         )

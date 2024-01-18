@@ -25,6 +25,11 @@ class Time(Term):
     def dl_type(cls) -> str:
         return "number"
 
+    @classmethod
+    # TODO make more robust
+    def parse(cls, s: str) -> Term:
+        return TimeLit.parse(s)
+
 
 class TimeVar(Var, Time):
     pass
@@ -37,6 +42,10 @@ class TimeLit(Time):
         if day < 0:
             raise ValueError("Negative day")
         self.day = day
+
+    @classmethod
+    def parse(cls, s: str) -> Term:
+        return cls(int(s))
 
     def dl_repr(self) -> str:
         return str(self.day)
@@ -88,6 +97,11 @@ class Cond(Term, metaclass=ABCMeta):
     def dl_type(cls) -> str:
         return "symbol"
 
+    @classmethod
+    # TODO make more robust
+    def parse(cls, s: str) -> Term:
+        return CondLit.parse(s)
+
 
 class CondVar(Var, Cond):
     pass
@@ -104,6 +118,10 @@ class CondLit(Cond):
         else:
             self.symbol = f"c{CondLit._counter}"
             CondLit._counter += 1
+
+    @classmethod
+    def parse(cls, s: str) -> Term:
+        return cls(s)
 
     def dl_repr(self) -> str:
         return f'"{self.symbol}"'
