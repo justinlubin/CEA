@@ -1,26 +1,9 @@
-from dataclasses import dataclass
 from typing import Optional
 
 # from contextlib import contextmanager
 
 from . import framework as fw
 from . import library as lib
-from . import souffle
-
-
-@dataclass
-class Goal:
-    @dataclass
-    class M(fw.Atom):
-        pass
-
-    @dataclass
-    class D:
-        pass
-
-
-def goal_fn() -> Goal.D:
-    return Goal.D()
 
 
 class Program:
@@ -58,47 +41,12 @@ class Program:
         self._query = self._trace.pop()
 
         if run:
-            program = self.dl_repr()
-            output = souffle.run(program)
-            print(program)
-            print()
-            if output.facts[Goal.M.name()]:
+            dl_prog = fw.DatalogProgram(edbs=self._trace)
+            if dl_prog.run(query=fw.Query([self._query])):
                 print(">>> Possible! <<<")
+                fw.construct(
+                    fw.CLIDerivationTreeConstructor(base_program=dl_prog),
+                    self._query,
+                )
             else:
                 print(">>> Not possible! <<<")
-
-    def dl_repr(self) -> str:
-        if not self._query:
-            raise ValueError("Query not set")
-
-        blocks = []
-
-        for rel in fw.Globals.defined_relations():
-            rel_decl = rel.dl_decl()
-            if rel_decl:
-                blocks.append(rel_decl)
-
-        blocks.append("")
-        blocks.append(f".output {Goal.M.name()}")
-        blocks.append("")
-
-        for rule in fw.Globals.defined_rules():
-            blocks.append(f"// {rule.fn.__name__}")
-            blocks.append(rule.dl_repr())
-            blocks.append("")
-
-        for fact in self._trace:
-            blocks.append(fact.dl_repr() + ".")
-
-        blocks.append("")
-
-        blocks.append(
-            fw.Rule(
-                fn=goal_fn,
-                head=Goal.M(),
-                dependencies=[],
-                checks=[self._query],
-            ).dl_repr()
-        )
-
-        return "\n".join(blocks)

@@ -1,8 +1,9 @@
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import Callable, Self, Optional, ClassVar
+from typing import Callable, Self, Optional, ClassVar, Iterator
 import inspect
 
+from . import souffle
 from . import util
 
 # Globals
@@ -13,12 +14,18 @@ class Globals:
     _rules: ClassVar[list["Rule"]] = []
 
     @staticmethod
-    def defined_relations():
+    def defined_relations() -> list["Relation"]:
         return Globals._relations.copy()
 
     @staticmethod
-    def defined_rules():
+    def defined_rules() -> list["Rule"]:
         return Globals._rules.copy()
+
+    # @staticmethod
+    # def matching_rules(rel: "Relation") -> Iterator["Rule"]:
+    #     for rule in Globals._rules:
+    #         if type(rule.head) is rel:
+    #             yield rule
 
 
 # Variables and terms
@@ -42,6 +49,12 @@ class Term(metaclass=ABCMeta):
     def substitute(self, lhs: str, rhs: "Term") -> "Term":
         return self
 
+    def free_vars(self) -> set["Var"]:
+        return set()
+
+    def __str__(self) -> str:
+        return self.dl_repr()
+
 
 class Var(Term):
     name: str
@@ -60,6 +73,12 @@ class Var(Term):
             return rhs
         else:
             return self
+
+    def free_vars(self) -> set["Var"]:
+        return {self}
+
+    def __hash__(self) -> int:
+        return hash(self.name)
 
 
 # Relations
@@ -96,18 +115,25 @@ class Atom(metaclass=ABCMeta):
     # Atom methods
 
     def __str__(self) -> str:
-        inner = [f"{p.name}={getattr(self, p.name)}" for p in self.arity()]
+        inner = [f"{p.name}={str(getattr(self, p.name))}" for p in self.arity()]
         return self.name() + "(" + ", ".join(inner) + ")"
+
+    def args(self) -> list[Term]:
+        return [getattr(self, p.name) for p in self.arity()]
 
     def dl_repr(self) -> str:
-        inner = [getattr(self, p.name).dl_repr() for p in self.arity()]
+        inner = [a.dl_repr() for a in self.args()]
         return self.name() + "(" + ", ".join(inner) + ")"
 
-    def substitute(self: Self, lhs: str, rhs: Term) -> Self:
+    def substitute(self, lhs: str, rhs: Term) -> Self:
         # Unsafe, since .subsitute returns a generic Term
-        return type(self)(
-            *[getattr(self, p.name).substitute(lhs, rhs) for p in self.arity()]
-        )
+        return type(self)(*[a.substitute(lhs, rhs) for a in self.args()])
+
+    def free_vars(self) -> set["Var"]:
+        return set.union(*[a.free_vars() for a in self.args()])
+
+    def relation(self) -> Relation:
+        return type(self)
 
 
 # Rules
@@ -122,7 +148,7 @@ class Rule:
 
     def __str__(self) -> str:
         return (
-            f"== {self.name} ============================\n"
+            f"== {self.name()} ============================\n"
             + "\n".join(map(str, self.body()))
             + "\n--------------------\n"
             + str(self.head)
@@ -206,13 +232,90 @@ def precondition(pc: Callable):
     return wrapper
 
 
+class Query:
+    atoms: list[Atom]
+    _fvs: list[Var]
+
+    def __init__(self, atoms: list[Atom]):
+        self.atoms = atoms
+        self._fvs = list(set.union(*[a.free_vars() for a in self.atoms]))
+
+    # Returns a list because order is important
+    def free_variables(self) -> list[Var]:
+        return self._fvs
+
+    def dl_repr(self) -> str:
+        free_vars = self.free_variables()
+
+        blocks = []
+
+        blocks.append(
+            ".decl Goal("
+            + ", ".join([f"{fv.dl_repr()}: {fv.dl_type()}" for fv in free_vars])
+            + ")"
+        )
+        blocks.append(".output Goal")
+
+        blocks.append(
+            "Goal("
+            + ", ".join([fv.dl_repr() for fv in free_vars])
+            + ") :-\n  "
+            + ",\n  ".join([a.dl_repr() for a in self.atoms])
+            + "."
+        )
+
+        return "\n".join(blocks)
+
+
+@dataclass
+class DatalogProgram:
+    edbs: list[Atom]
+
+    def dl_repr(self) -> str:
+        blocks = []
+
+        for rel in Globals.defined_relations():
+            rel_decl = rel.dl_decl()
+            if rel_decl:
+                blocks.append(rel_decl)
+
+        blocks.append("")
+
+        for rule in Globals.defined_rules():
+            blocks.append(f"// {rule.fn.__name__}")
+            blocks.append(rule.dl_repr())
+            blocks.append("")
+
+        for edb in self.edbs:
+            blocks.append(edb.dl_repr() + ".")
+
+        blocks.append("")
+
+        return "\n".join(blocks)
+
+    def run(self, query: Query) -> list[dict[str, str]]:
+        dl_prog = self.dl_repr() + "\n" + query.dl_repr()
+        output = souffle.run(dl_prog)
+        assignments = []
+        for row in output.facts["Goal"]:
+            assignment = {}
+            for key, val in zip(query.free_variables(), row):
+                assignment[key.dl_repr()] = val
+            assignments.append(assignment)
+        print(assignments)
+        return assignments
+
+
+PathedAtom = tuple[Atom, list[int]]
+
+
 class DerivationTree(metaclass=ABCMeta):
     @abstractmethod
     def tree_string(self, depth: int = 0) -> str:
         ...
 
     @abstractmethod
-    def goals(self) -> list[tuple[Atom, list[int]]]:
+    def goals(self) -> list[PathedAtom]:
         ...
 
     @abstractmethod
@@ -238,7 +341,7 @@ class DerivationStep(DerivationTree):
             ret += "\n" + a.tree_string(depth=depth)
         return ret
 
-    def goals(self) -> list[tuple[Atom, list[int]]]:
+    def goals(self) -> list[PathedAtom]:
         return util.flatten(
             [
                 [(g, crumbs + [i]) for g, crumbs in a.goals()]
@@ -272,7 +375,7 @@ class DerivationGoal(DerivationTree):
     def tree_string(self, depth: int = 0):
         return "-" * depth + f"{self.goal} *"
 
-    def goals(self) -> list[tuple[Atom, list[int]]]:
+    def goals(self) -> list[PathedAtom]:
         return [(self.goal, [])]
 
     def replace(
@@ -281,3 +384,70 @@ class DerivationGoal(DerivationTree):
         if not breadcrumbs:
             return new_subtree
         raise ValueError("Invalid breadcrumbs for derivation tree")
+
+
+class DerivationTreeConstructor(metaclass=ABCMeta):
+    @abstractmethod
+    def select_goal(self, goals: list[PathedAtom]) -> PathedAtom:
+        ...
+
+    @abstractmethod
+    def select_rule(self, rules: list[tuple[Rule, list[dict[str, str]]]]) -> Rule:
+        ...
+
+    @abstractmethod
+    def select_assignment(self, assignments):
+        ...
+
+    @abstractmethod
+    def rule_options(self, goal_atom: Atom, rule: Rule) -> list[dict[str, str]]:
+        ...
+
+
+@dataclass
+class CLIDerivationTreeConstructor(DerivationTreeConstructor):
+    base_program: DatalogProgram
+
+    def select_goal(self, goals: list[PathedAtom]) -> PathedAtom:
+        print(f"Select a goal to work on (0-{len(goals) - 1}):")
+        for i, (g, bc) in enumerate(goals):
+            print(f"{i}. {g} (bc: {bc})")
+        return goals[int(input("> "))]
+
+    def select_rule(self, rules: list[tuple[Rule, list[dict[str, str]]]]):
+        print(f"Select a rule to use (0-{len(rules) - 1}):")
+        for i, (r, a) in enumerate(rules):
+            print(f"{i}. {r.name()} - {a}")
+        return rules[int(input("> "))]
+
+    def select_assignment(self, assignments):
+        print(f"Select an assignment to use (0-{len(assignments)-1}):")
+        for i, a in enumerate(assignments):
+            print(f"{i}. {a}")
+        return int(input("> "))
+
+    def rule_options(self, goal_atom: Atom, rule: Rule) -> list[dict[str, str]]:
+        if rule.head.relation() is not goal_atom.relation():
+            return []
+
+        def make_substitutions(atom: Atom) -> Atom:
+            new_atom = atom
+            for lhs_var, rhs in zip(rule.head.args(), goal_atom.args()):
+                assert isinstance(lhs_var, Var)
+                new_atom = new_atom.substitute(lhs_var.name, rhs)
+            return new_atom
+
+        query = Query([make_substitutions(a) for a in rule.dependencies + rule.checks])
+        return self.base_program.run(query=query)
+
+
+def construct(ctor: DerivationTreeConstructor, initial_goal: Atom) -> DerivationTree:
+    dt = DerivationGoal(goal=initial_goal)
+    while True:
+        subgoals = dt.goals()
+        if not subgoals:
+            return dt
+        goal_atom, goal_bc = ctor.select_goal(subgoals)
+        selected_rule = ctor.select_rule(
+            [(r, ctor.rule_options(goal_atom, r)) for r in Globals.defined_rules()]
+        )
