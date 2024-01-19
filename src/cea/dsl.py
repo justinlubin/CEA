@@ -1,10 +1,8 @@
 from typing import Optional
 
-# from contextlib import contextmanager
-
+from . import derivation as der
 from . import framework as fw
 from . import library as lib
-from . import derivation as der
 
 
 class Program:
@@ -38,11 +36,10 @@ class Program:
             )
             if dl_prog.run_query(query=fw.Query([self._query])):
                 print(">>> Possible! <<<")
-                der.construct(
-                    der.CLIDerivationTreeConstructor(base_program=dl_prog),
-                    self._query,
-                    dl_prog,
-                )
+                der.Constructor(
+                    base_program=dl_prog,
+                    interactor=der.CLIInteractor(),
+                ).construct(initial_goal=self._query)
             else:
                 print(">>> Not possible! <<<")
 

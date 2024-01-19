@@ -1,11 +1,16 @@
 from abc import ABCMeta, abstractmethod
+
 from . import util
+
 from .core import *
 
-PathedAtom = tuple[Atom, list[int]]
+# Derivation trees
+
+Breadcrumbs = list[int]
+PathedAtom = tuple[Atom, Breadcrumbs]
 
 
-class DerivationTree(metaclass=ABCMeta):
+class Tree(metaclass=ABCMeta):
     @abstractmethod
     def tree_string(self, depth: int = 1) -> str:
         ...
@@ -16,8 +21,10 @@ class DerivationTree(metaclass=ABCMeta):
 
     @abstractmethod
     def replace(
-        self, breadcrumbs: list[int], new_subtree: "DerivationTree"
-    ) -> "DerivationTree":
+        self,
+        breadcrumbs: Breadcrumbs,
+        new_subtree: "Tree",
+    ) -> "Tree":
         ...
 
     def __str__(self) -> str:
@@ -25,13 +32,13 @@ class DerivationTree(metaclass=ABCMeta):
 
 
 @dataclass
-class DerivationStep(DerivationTree):
+class Step(Tree):
     label: Callable
     consequent: Atom
-    antecedents: list[DerivationTree]
+    antecedents: list[Tree]
 
     def tree_string(self, depth: int = 1) -> str:
-        ret = "-" * depth + " " + self.consequent.dl_repr()
+        ret = "-" * depth + f" [{self.label.__name__}] " + self.consequent.dl_repr()
         for a in self.antecedents:
             ret += "\n" + a.tree_string(depth=depth + 1)
         return ret
@@ -45,14 +52,16 @@ class DerivationStep(DerivationTree):
         )
 
     def replace(
-        self, breadcrumbs: list[int], new_subtree: DerivationTree
-    ) -> DerivationTree:
+        self,
+        breadcrumbs: Breadcrumbs,
+        new_subtree: Tree,
+    ) -> Tree:
         if not breadcrumbs:
             return new_subtree
         child = breadcrumbs.pop()  # modifies breadcrumbs
         if child < 0 or child >= len(self.antecedents):
             raise ValueError("Invalid breadcrumbs for derivation tree")
-        return DerivationStep(
+        return Step(
             label=self.label,
             consequent=self.consequent,
             antecedents=(
@@ -64,24 +73,43 @@ class DerivationStep(DerivationTree):
 
 
 @dataclass
-class DerivationGoal(DerivationTree):
+class Goal(Tree):
     goal: Atom
 
     def tree_string(self, depth: int = 1):
-        return "-" * depth + " " + self.goal.dl_repr() + " * "
+        return "-" * depth + " *** " + self.goal.dl_repr()
 
     def goals(self) -> list[PathedAtom]:
         return [(self.goal, [])]
 
-    def replace(
-        self, breadcrumbs: list[int], new_subtree: DerivationTree
-    ) -> DerivationTree:
+    def replace(self, breadcrumbs: Breadcrumbs, new_subtree: Tree) -> Tree:
         if not breadcrumbs:
             return new_subtree
         raise ValueError("Invalid breadcrumbs for derivation tree")
 
 
-class DerivationTreeConstructor(metaclass=ABCMeta):
+@dataclass
+class Leaf(Tree):
+    leaf: Atom
+
+    def tree_string(self, depth: int = 1):
+        return "-" * depth + " [leaf] " + self.leaf.dl_repr()
+
+    def goals(self) -> list[PathedAtom]:
+        return []
+
+    def replace(self, breadcrumbs: Breadcrumbs, new_subtree: Tree) -> Tree:
+        raise ValueError("Cannot replace a leaf")
+
+
+# Interactions
+
+
+class Interactor(metaclass=ABCMeta):
+    @abstractmethod
+    def display_tree(self, derivation_tree: Tree) -> None:
+        ...
+
     @abstractmethod
     def select_goal(self, goals: list[PathedAtom]) -> PathedAtom:
         ...
@@ -96,44 +124,90 @@ class DerivationTreeConstructor(metaclass=ABCMeta):
     def select_assignment(self, assignments: list[Assignment]) -> Assignment:
         ...
 
-    @abstractmethod
-    def rule_options(self, goal_atom: Atom, rule: Rule) -> list[Assignment]:
-        ...
 
-
-def assignment_string(assignment: Assignment) -> str:
-    return "{" + ", ".join(f"{k} -> {v.dl_repr()}" for k, v in assignment.items()) + "}"
-
-
-@dataclass
-class CLIDerivationTreeConstructor(DerivationTreeConstructor):
-    base_program: DatalogProgram
+class CLIInteractor(Interactor):
+    def display_tree(self, dt: Tree) -> None:
+        print("\n===== Derivation tree =====")
+        print(dt.tree_string())
+        print("===================================")
 
     def select_goal(self, goals: list[PathedAtom]) -> PathedAtom:
-        print()
-        print(f"Select a goal to work on (0-{len(goals) - 1}):")
-        for i, (g, bc) in enumerate(goals):
-            print(f"{i}. {g.dl_repr()} (bc: {bc})")
+        print("\nSelect a goal to work on:")
+        for i, (g, _) in enumerate(goals):
+            print(f"{i}. {g.dl_repr()}")
         return goals[int(input("> "))]
 
     def select_rule(
         self, rules: list[tuple[Rule, list[Assignment]]]
     ) -> tuple[Rule, list[Assignment]]:
-        print()
-        print(f"Select a rule to use (0-{len(rules) - 1}):")
-        for i, (r, aa) in enumerate(rules):
-            print(f"{i}. {r.name()} ({[assignment_string(a) for a in aa]})")
+        print("\nSelect a rule to use:")
+        valid_rules = [r for (r, aa) in rules if aa]
+        for i, r in enumerate(valid_rules):
+            print(f"{i}. {r.name()}")
         return rules[int(input("> "))]
 
     def select_assignment(self, assignments: list[Assignment]) -> Assignment:
-        print()
-        print(f"Select an assignment to use (0-{len(assignments)-1}):")
+        if len(assignments) == 1:
+            return assignments[0]
+
+        print("\nSelect an assignment to use:")
         for i, a in enumerate(assignments):
-            print(f"{i}. {assignment_string(a)}")
+            print(f"{i}. {CLIInteractor._assignment_string(a)}")
         return assignments[int(input("> "))]
 
-    def rule_options(self, goal_atom: Atom, rule: Rule) -> list[Assignment]:
-        if rule.head.relation() != goal_atom.relation():
+    @staticmethod
+    def _assignment_string(assignment: Assignment) -> str:
+        return (
+            "{"
+            + ", ".join(f"{k} -> {v.dl_repr()}" for k, v in assignment.items())
+            + "}"
+        )
+
+
+# Construction algorithm
+
+
+class Constructor:
+    _base_program: DatalogProgram
+
+    def __init__(self, base_program: DatalogProgram, interactor: Interactor):
+        self._base_program = base_program
+        self._interactor = interactor
+
+    def construct(self, initial_goal: Atom) -> Tree:
+        dt: Tree = Goal(goal=initial_goal)
+        rules = self._base_program.idbs()
+        while True:
+            self._interactor.display_tree(dt)
+
+            subgoals = dt.goals()
+            if not subgoals:
+                return dt
+
+            goal_atom, goal_bc = self._interactor.select_goal(subgoals)
+
+            selected_rule, possible_assignments = self._interactor.select_rule(
+                [(r, self._rule_options(goal_atom, r)) for r in rules]
+            )
+
+            selected_assignment = self._interactor.select_assignment(
+                possible_assignments
+            )
+
+            dt = dt.replace(
+                goal_bc,
+                Step(
+                    label=selected_rule.label,
+                    consequent=goal_atom,
+                    antecedents=[
+                        self._make_leaf(a.substitute_all(selected_assignment))
+                        for a in selected_rule.dependencies
+                    ],
+                ),
+            )
+
+    def _rule_options(self, goal: Atom, rule: Rule) -> list[Assignment]:
+        if rule.head.relation() != goal.relation():
             return []
 
         def make_substitutions(atom: Atom) -> Atom:
@@ -141,40 +215,15 @@ class CLIDerivationTreeConstructor(DerivationTreeConstructor):
             for k in rule.head.relation().arity():
                 lhs = rule.head.get_arg(k)
                 assert isinstance(lhs, Var)
-                rhs = goal_atom.get_arg(k)
+                rhs = goal.get_arg(k)
                 new_atom = new_atom.substitute(lhs.dl_repr(), rhs)
             return new_atom
 
         query = Query([make_substitutions(a) for a in rule.dependencies + rule.checks])
-        return self.base_program.run_query(query=query)
+        return self._base_program.run_query(query=query)
 
-
-def construct(
-    ctor: DerivationTreeConstructor,
-    initial_goal: Atom,
-    reference_program: DatalogProgram,
-) -> DerivationTree:
-    dt: DerivationTree = DerivationGoal(goal=initial_goal)
-    rules = reference_program.idbs()
-    while True:
-        print()
-        print(dt.tree_string())
-        subgoals = dt.goals()
-        if not subgoals:
-            return dt
-        goal_atom, goal_bc = ctor.select_goal(subgoals)
-        selected_rule, possible_assignments = ctor.select_rule(
-            [(r, ctor.rule_options(goal_atom, r)) for r in rules]
-        )
-        selected_assignment = ctor.select_assignment(possible_assignments)
-        dt = dt.replace(
-            goal_bc,
-            DerivationStep(
-                label=selected_rule.label,
-                consequent=goal_atom,
-                antecedents=[
-                    DerivationGoal(a.substitute_all(selected_assignment))
-                    for a in selected_rule.dependencies
-                ],
-            ),
-        )
+    def _make_leaf(self, atom: Atom) -> Tree:
+        if atom in self._base_program.edbs():
+            return Leaf(atom)
+        else:
+            return Goal(atom)

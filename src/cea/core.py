@@ -127,6 +127,17 @@ class Relation:
     def free_args(self, prefix: str) -> dict[str, Term]:
         return {name: sort.var(prefix + name) for name, sort in self.arity().items()}
 
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, Relation):
+            return False
+        if self.name() != other.name():
+            return False
+        if self.infix_symbol != other.infix_symbol:
+            return False
+        if self.arity() != other.arity():
+            return False
+        return True
+
 
 class Atom:
     @abstractmethod
@@ -182,6 +193,16 @@ class Atom:
     def ground(self) -> bool:
         for k in self.relation().arity():
             if not self.get_arg(k).ground():
+                return False
+        return True
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, Atom):
+            return False
+        if self.relation() != other.relation():
+            return False
+        for k in self.relation().arity():
+            if self.get_arg(k) != other.get_arg(k):
                 return False
         return True
 
@@ -301,6 +322,9 @@ class DatalogProgram:
 
         self._edbs = edbs
         self._idbs = idbs
+
+    def edbs(self) -> list[Atom]:
+        return self._edbs
 
     def idbs(self) -> list[Rule]:
         return self._idbs
