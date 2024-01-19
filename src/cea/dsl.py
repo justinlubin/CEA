@@ -2,22 +2,27 @@ from typing import Optional
 
 from . import derivation as der
 from . import framework as fw
-from . import library as lib
+from . import stdbiolib
 
 
 class Program:
     _trace: list[fw.Atom]
     _query: Optional[fw.Atom]
+    _library: fw.Library
 
-    def __init__(self) -> None:
+    def __init__(self, *libraries: fw.Library) -> None:
+        if stdbiolib.lib not in libraries:
+            libraries += (stdbiolib.lib,)
+
         self._trace = []
+        self._library = fw.Library.merge(libraries)
 
-    def Condition(self) -> lib.CondLit:
-        return lib.CondLit()
+    def Condition(self) -> stdbiolib.CondLit:
+        return stdbiolib.CondLit()
 
     def __getattr__(self, attr: str):
         selected_relation = None
-        for rel in fw.Globals.defined_relations():
+        for rel in self._library.relations():
             if rel.name() == attr + "_M":
                 selected_relation = rel
                 break
@@ -32,7 +37,7 @@ class Program:
         if run:
             dl_prog = fw.DatalogProgram(
                 edbs=self._trace,
-                idbs=fw.Globals.defined_rules(),
+                idbs=self._library.rules(),
             )
             if dl_prog.run_query(query=fw.Query([self._query])):
                 print(">>> Possible! <<<")
@@ -50,7 +55,7 @@ class Program:
     ) -> "Program":
         def wrap(a: int | fw.Term) -> fw.Term:
             if isinstance(a, int):
-                return lib.TimeLit(a)
+                return stdbiolib.TimeLit(a)
             else:
                 return a
 

@@ -1,29 +1,48 @@
 import inspect
-from typing import Callable, Optional, TypeVar, ClassVar, ParamSpec, Sequence
+from typing import Callable, Optional, TypeVar, ClassVar, ParamSpec, Sequence, Iterable
 
 from .core import *
 
 
-class Globals:
-    _events: ClassVar[list["Relation"]] = []
-    _analyses: ClassVar[list["Relation"]] = []
-    _rules: ClassVar[list["Rule"]] = []
+class Library:
+    _events: list[Relation]
+    _analyses: list[Relation]
+    _rules: list[Rule]
+
+    def __init__(self):
+        self._events = []
+        self._analyses = []
+        self._rules = []
+
+    def events(self) -> list[Relation]:
+        return self._events
+
+    def analyses(self) -> list[Relation]:
+        return self._analyses
+
+    def rules(self) -> list[Rule]:
+        return self._rules
+
+    def register_event(self, event: Relation) -> None:
+        self._events.append(event)
+
+    def register_analysis(self, analysis: Relation) -> None:
+        self._analyses.append(analysis)
+
+    def register_rule(self, rule: Rule) -> None:
+        self._rules.append(rule)
+
+    def relations(self) -> list[Relation]:
+        return self.events() + self.analyses()
 
     @staticmethod
-    def defined_events() -> list["Relation"]:
-        return Globals._events.copy()
-
-    @staticmethod
-    def defined_analyses() -> list["Relation"]:
-        return Globals._analyses.copy()
-
-    @staticmethod
-    def defined_relations() -> list["Relation"]:
-        return Globals.defined_events() + Globals.defined_analyses()
-
-    @staticmethod
-    def defined_rules() -> list["Rule"]:
-        return Globals._rules.copy()
+    def merge(libraries: Iterable["Library"]) -> "Library":
+        ret = Library()
+        for lib in libraries:
+            ret._events.extend(lib._events)
+            ret._analyses.extend(lib._analyses)
+            ret._rules.extend(lib._rules)
+        return ret
 
 
 class Metadata(Atom):
@@ -90,7 +109,7 @@ T = TypeVar("T")
 
 
 def precondition(
-    pc: Callable[..., Sequence[Atom]]
+    library: Library, pc: Callable[..., Sequence[Atom]]
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
     def wrapper(func: Callable[P, T]) -> Callable[P, T]:
         pc_sig = inspect.signature(pc)
@@ -135,7 +154,7 @@ def precondition(
 
         args.append(pc_params[-1].annotation.free("ret__"))
 
-        Globals._rules.append(
+        library.register_rule(
             Rule(
                 label=func,
                 head=args[-1],
@@ -149,11 +168,17 @@ def precondition(
     return wrapper
 
 
-def event(cls):
-    Globals._events.append(cls.M.class_relation())
-    return cls
+def event(library: Library) -> Callable:
+    def wrapper(cls):
+        library.register_event(cls.M.class_relation())
+        return cls
+
+    return wrapper
 
 
-def analysis(cls):
-    Globals._analyses.append(cls.M.class_relation())
-    return cls
+def analysis(library: Library) -> Callable:
+    def wrapper(cls):
+        library.register_analysis(cls.M.class_relation())
+        return cls
+
+    return wrapper

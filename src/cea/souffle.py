@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class DatalogOutput:
+class SouffleOutput:
     facts: dict[str, list[tuple[str, ...]]]
 
     def dl_repr(self) -> str:
@@ -23,7 +23,7 @@ class DatalogOutput:
         return "\n".join(ret)
 
 
-def run(program: str) -> DatalogOutput:
+def run(program: str) -> SouffleOutput:
     with tempfile.TemporaryDirectory() as tmp_dirname:
         program_filename = tmp_dirname + "/program.dl"
         with open(program_filename, "w") as f:
@@ -46,4 +46,4 @@ def run(program: str) -> DatalogOutput:
                         facts[rel_name].append(())
                     else:
                         facts[rel_name].append(tuple(stripped_line.split("\t")))
-        return DatalogOutput(facts)
+        return SouffleOutput(facts)

@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from .framework import *
 
+lib = Library()
+
 ###############################################################################
 # Values
 
@@ -134,7 +136,7 @@ class CondEq(Metadata):
 # Events
 
 
-@event
+@event(lib)
 @dataclass
 class Infect:
     library: str
@@ -144,7 +146,7 @@ class Infect:
         c: Cond
 
 
-@event
+@event(lib)
 @dataclass
 class Seq:
     path: str
@@ -158,7 +160,7 @@ class Seq:
 # Analysis types
 
 
-@analysis
+@analysis(lib)
 @dataclass
 class PhenotypeScore:
     fold_change: list[float]
@@ -191,7 +193,7 @@ def pc(
     ]
 
 
-@precondition(pc)
+@precondition(lib, pc)
 def ttest_enrichment(
     infection: Infect,
     seq1: Seq,
@@ -216,7 +218,7 @@ def ttest_enrichment(
     return PhenotypeScore(fold_change, sig)
 
 
-@precondition(pc)
+@precondition(lib, pc)
 def mageck_enrichment(
     infection: Infect,
     seq1: Seq,
@@ -244,7 +246,7 @@ def pc_wrong(
     ]
 
 
-@precondition(pc_wrong)
+@precondition(lib, pc_wrong)
 def wrong_fn(
     infection: Infect,
     seq1: Seq,
