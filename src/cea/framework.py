@@ -114,6 +114,9 @@ def precondition(
                     "Precondition parameter type does not match function parameter type"
                 )
 
+            if not issubclass(pp.annotation, Metadata):
+                raise ValueError("Precondition parameter type is not metadata")
+
             args.append(pp.annotation.free(f"{fp.name}__"))
 
         if pc_params[-1].name != "ret":
@@ -126,6 +129,9 @@ def precondition(
             raise ValueError(
                 "Precondition last parameter type does not match function return type"
             )
+
+        if not issubclass(pc_params[-1].annotation, Metadata):
+            raise ValueError("Precondition last parameter type is not metadata")
 
         args.append(pc_params[-1].annotation.free("ret__"))
 
