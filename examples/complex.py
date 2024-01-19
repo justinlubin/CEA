@@ -5,10 +5,10 @@ p = cea.dsl.Program()
 c1 = p.Condition()
 c2 = p.Condition()
 
-p.Infect(1, c1, library="lib1.csv")
-p.Infect(1, c2, library="lib2.csv")
+p.Infect(t=1, c=c1)
+p.Infect(t=1, c=c2)
 
 for d in [3, 5, 7]:
-    p.Seq(d, c1, path=f"day{d}.fasta")
+    p.Seq(t=d, c=c1)
 
-p.PhenotypeScore(3, 5, c1).query()
+p.PhenotypeScore(ti=3, tf=5, c=c1).query()

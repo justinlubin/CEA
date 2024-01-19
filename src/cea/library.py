@@ -33,10 +33,10 @@ class Time(Term):
         return cls._sort
 
     def __eq__(self, other) -> "TimeEq":  # type: ignore[override]
-        return TimeEq(self, other)
+        return TimeEq(lhs=self, rhs=other)
 
     def __lt__(self, other) -> "TimeLt":  # type: ignore[override]
-        return TimeLt(self, other)
+        return TimeLt(lhs=self, rhs=other)
 
 
 class TimeLit(Time):
@@ -52,16 +52,24 @@ class TimeLit(Time):
         return str(self.day)
 
 
-@dataclass
-class TimeEq(Predicate):
+class TimeEq(Metadata):
     lhs: Time
     rhs: Time
 
+    @override
+    @classmethod
+    def infix_symbol(cls) -> Optional[str]:
+        return "="
 
-@dataclass
-class TimeLt(Predicate):
+
+class TimeLt(Metadata):
     lhs: Time
     rhs: Time
+
+    @override
+    @classmethod
+    def infix_symbol(cls) -> Optional[str]:
+        return "<"
 
 
 # Condition
@@ -93,7 +101,7 @@ class Cond(Term):
         return cls._sort
 
     def __eq__(self, other) -> "CondEq":  # type: ignore[override]
-        return CondEq(self, other)
+        return CondEq(lhs=self, rhs=other)
 
 
 class CondLit(Cond):
@@ -112,10 +120,14 @@ class CondLit(Cond):
         return f'"{self.symbol}"'
 
 
-@dataclass
-class CondEq(Predicate):
+class CondEq(Metadata):
     lhs: Cond
     rhs: Cond
+
+    @override
+    @classmethod
+    def infix_symbol(cls) -> Optional[str]:
+        return "="
 
 
 ###############################################################################
@@ -163,7 +175,7 @@ def pc(
     seq1: Seq.M,
     seq2: Seq.M,
     ret: PhenotypeScore.M,
-) -> list[Predicate]:
+) -> list[Atom]:
     return [
         infection.t < seq1.t,
         seq1.t < seq2.t,
@@ -216,7 +228,7 @@ def pc_wrong(
     seq1: Seq.M,
     seq2: Seq.M,
     ret: PhenotypeScore.M,
-) -> list[Predicate]:
+) -> list[Atom]:
     return [
         infection.t > seq1.t,
         seq1.t < seq2.t,

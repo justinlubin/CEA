@@ -3,8 +3,8 @@ import cea.dsl
 p = cea.dsl.Program()
 c = p.Condition()
 
-p.Infect(1, c, library="library.csv")
-p.Seq(3, c, path="before.fasta")
-p.Seq(8, c, path="after.fasta")
+p.Infect(t=1, c=c)
+p.Seq(t=3, c=c)
+p.Seq(t=8, c=c)
 
-p.PhenotypeScore(3, 8, c).query()
+p.PhenotypeScore(ti=3, tf=8, c=c).query()
