@@ -1,6 +1,6 @@
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import Callable, ClassVar
+from typing import Callable, ClassVar, Optional, TypeVar, ParamSpec, TypeVarTuple
 from collections import OrderedDict
 
 import inspect
@@ -81,7 +81,7 @@ class Var(Term):
 
     @override
     def dl_repr(self) -> str:
-        return self._name.replace(".", "_")
+        return self._name
 
     @override
     def substitute(self, lhs: "Var", rhs: Term) -> Term:
@@ -99,30 +99,47 @@ class Var(Term):
     def __hash__(self) -> int:
         return hash(self._name)
 
-    def __str__(self) -> str:
-        return f"${self._name}"
-
 
 # Relations
 
 # Relation = type["Atom"]
 
-
 Arity = OrderedDict[str, Sort]
 
 
-class Relation(metaclass=ABCMeta):
-    @abstractmethod
-    def name(self) -> str:
-        ...
+class Relation:
+    _name: str
+    _arity: Arity
+    _infix_symbol: Optional[str]
 
-    @abstractmethod
-    def arity(self) -> Arity:
-        ...
+    def __init__(
+        self,
+        name: str,
+        arity: OrderedDict[str, Sort],
+        infix_symbol: Optional[str],
+    ):
+        if infix_symbol:
+            assert len(arity) == 2
+
+        self._name = name
+        self._arity = arity
+        self._infix_symbol = infix_symbol
+
+    def name(self) -> str:
+        return self._name
+
+    def arity(self) -> OrderedDict[str, Sort]:
+        return self._arity
+
+    def infix_symbol(self) -> Optional[str]:
+        return self._infix_symbol
 
     def dl_repr(self) -> str:
+        if self._infix_symbol:
+            return ""
+
         return (
-            f".decl {self.name}("
+            f".decl {self.name()}("
             + ", ".join(
                 [f"{name}: {sort.dl_repr()}" for name, sort in self.arity().items()]
             )
@@ -130,35 +147,77 @@ class Relation(metaclass=ABCMeta):
         )
 
     def free(self, prefix: str) -> "Atom":
-        return BasicAtom(
+        return Atom(
             relation=self,
             args={name: sort.var(prefix + name) for name, sort in self.arity().items()},
+        )
+
+    @staticmethod
+    def of_class(cls: type, infix_symbol: Optional[str] = None) -> "Relation":
+        arity = OrderedDict()
+        init = cls.__init__  # type: ignore
+        for p in list(inspect.signature(init).parameters.values())[1:]:
+            assert issubclass(p.annotation, Term)
+            arity[p.name] = p.annotation.sort()
+        return Relation(
+            name=cls.__qualname__.replace(".", "_"),
+            arity=arity,
+            infix_symbol=infix_symbol,
         )
 
 
 Assignment = dict[Var, Term]
 
 
-class Atom(metaclass=ABCMeta):
-    @abstractmethod
+class Atom:
+    _relation: Relation
+    _args: dict[str, Term]
+
+    def __init__(
+        self,
+        relation: Relation,
+        args: dict[str, Term],
+    ):
+        ra = relation.arity()
+        assert ra.keys() == args.keys()
+        for k in ra:
+            assert args[k].sort() == ra[k]
+
+        self._relation = relation
+        self._args = args
+
     def get_arg(self, key: str) -> Term:
-        ...
+        return self._args[key]
 
-    @abstractmethod
     def set_arg(self, key: str, val: Term) -> "Atom":
-        ...
+        assert val.sort() == self.relation().arity()[key]
+        new_args = self._args.copy()
+        new_args[key] = val
+        return Atom(self._relation, new_args)
 
-    @abstractmethod
     def relation(self) -> Relation:
-        ...
+        return self._relation
 
     def dl_repr(self) -> str:
-        return (
-            self.relation().name()
-            + "("
-            + ", ".join([self.get_arg(k).dl_repr() for k in self.relation().arity()])
-            + ")"
-        )
+        infix_symbol = self.relation().infix_symbol()
+        if infix_symbol:
+            left_key, right_key = self.relation().arity().keys()
+            return (
+                self.get_arg(left_key).dl_repr()
+                + " "
+                + infix_symbol
+                + " "
+                + self.get_arg(right_key).dl_repr()
+            )
+        else:
+            return (
+                self.relation().name()
+                + "("
+                + ", ".join(
+                    [self.get_arg(k).dl_repr() for k in self.relation().arity()]
+                )
+                + ")"
+            )
 
     def substitute(self, lhs: Var, rhs: Term) -> "Atom":
         assert lhs.sort() == rhs.sort()
@@ -179,111 +238,12 @@ class Atom(metaclass=ABCMeta):
         )
 
 
-class BasicAtom(Atom):
-    _relation: Relation
-    _args: dict[str, Term]
-
-    def __init__(self, relation: Relation, args: dict[str, Term]):
-        ra = relation.arity()
-        assert ra.keys() == args.keys()
-        for k in ra:
-            assert args[k].sort() == ra[k]
-
-        self._relation = relation
-        self._args = args
-
-    @override
-    def get_arg(self, key: str) -> Term:
-        return self._args[key]
-
-    @override
-    def set_arg(self, key: str, val: Term) -> Atom:
-        assert val.sort() == self.relation().arity()[key]
-        new_args = self._args.copy()
-        new_args[key] = val
-        return BasicAtom(self._relation, new_args)
-
-    @override
-    def relation(self) -> Relation:
-        return self._relation
-
-
-# class Atom(metaclass=ABCMeta):
-#     """Subclass ___init___ must take a list of Term (not checked)."""
-#
-#     def __init_subclass__(cls, **kwargs):
-#         super().__init_subclass__(**kwargs)
-#         Globals._relations.append(cls)
-#
-#     # Relation methods
-#
-#     @classmethod
-#     def name(cls) -> str:
-#         return cls.__qualname__.replace(".", "_")
-#
-#     @classmethod
-#     def arity(cls):
-#         return list(inspect.signature(cls.__init__).parameters.values())[1:]
-#
-#     @classmethod
-#     def free(cls, prefix: str) -> Self:
-#         return cls(*[p.annotation.var(prefix + p.name) for p in cls.arity()])
-#
-#     @classmethod
-#     def dl_decl(cls) -> Optional[str]:
-#         inner = [f"{p.name}: {p.annotation.sort().dl_repr()}" for p in cls.arity()]
-#         return ".decl " + cls.name() + "(" + ", ".join(inner) + ")"
-#
-#     # Atom methods
-#
-#     def __str__(self) -> str:
-#         inner = [f"{p.name}={str(getattr(self, p.name))}" for p in self.arity()]
-#         return self.name() + "(" + ", ".join(inner) + ")"
-#
-#     def args(self) -> list[Term]:
-#         return [getattr(self, p.name) for p in self.arity()]
-#
-#     def dl_repr(self) -> str:
-#         inner = [a.dl_repr() for a in self.args()]
-#         return self.name() + "(" + ", ".join(inner) + ")"
-#
-#     def substitute(self, lhs: str, rhs: Term) -> Self:
-#         # Unsafe, since .subsitute returns a generic Term
-#         return type(self)(*[a.substitute(lhs, rhs) for a in self.args()])
-#
-#     def substitute_all(self, subs: dict[str, Term]) -> Self:
-#         new_atom = self
-#         for lhs, rhs in subs.items():
-#             new_atom = new_atom.substitute(lhs, rhs)
-#         print(subs)
-#         return new_atom
-#
-#     def free_vars(self) -> set["Var"]:
-#         return set.union(*[a.free_vars() for a in self.args()])
-#
-#     def relation(self) -> Relation:
-#         return type(self)
-
-
-# Rules
-
-
 @dataclass
 class Rule:
     fn: Callable
     head: Atom
     dependencies: list[Atom]
     checks: list[Atom]
-
-    def __str__(self) -> str:
-        return (
-            f"== {self.name()} ============================\n"
-            + "\n".join(map(str, self.body()))
-            + "\n--------------------\n"
-            + str(self.head)
-            + "\n=============================="
-            + "=" * (len(self.name()) + 2)
-        )
 
     def name(self) -> str:
         return self.fn.__name__
@@ -297,8 +257,42 @@ class Rule:
         return f"{lhs} :-\n  {rhs}"
 
 
-def precondition(pc: Callable):
-    def wrapper(func: Callable) -> Callable:
+class Metadata:
+    _relation: ClassVar[Relation]
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls._relation = Relation.of_class(cls)
+
+    @classmethod
+    def relation(cls) -> Relation:
+        return cls._relation
+    
+    @classmethod
+    def of_atom(cls, a: Atom) -> Metadata:
+
+
+
+class Predicate:
+    _relation: ClassVar[Relation]
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls._relation = Relation.of_class(cls)
+
+    @classmethod
+    def relation(cls) -> Relation:
+        return cls._relation
+
+
+T = TypeVar("T")
+P = ParamSpec("P")
+
+
+def precondition(
+    pc: Callable[..., list[Predicate]]
+) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    def wrapper(func: Callable[P, T]) -> Callable[P, T]:
         pc_sig = inspect.signature(pc)
         func_sig = inspect.signature(func)
 
@@ -315,50 +309,46 @@ def precondition(pc: Callable):
                     "Precondition parameter name does not match parameter name"
                 )
 
-            if not pp.annotation.__qualname__.endswith(".M"):
-                raise ValueError("Precondition parameter type is not a metadata type")
-
-            if not fp.annotation.__qualname__.endswith(".D"):
-                raise ValueError("Function parameter type is not a data type")
-
-            if pp.annotation.__qualname__[:-2] != fp.annotation.__qualname__[:-2]:
+            if pp.annotation.__qualname__ != fp.annotation.__qualname__ + ".M":
                 raise ValueError(
                     "Precondition parameter type does not match function parameter type"
                 )
 
-            args.append(pp.annotation.free(f"{fp.name}."))
+            args.append(pp.annotation.free(f"{fp.name}__"))
 
         if pc_params[-1].name != "ret":
             raise ValueError("Precondition last parameter name not 'ret'")
 
-        if not pc_params[-1].annotation.__qualname__.endswith(".M"):
-            raise ValueError("Precondition last parameter type is not a metadata type")
-
-        if not func_sig.return_annotation.__qualname__.endswith(".D"):
-            raise ValueError("Function return type is not a data type")
-
         if (
-            pc_params[-1].annotation.__qualname__[:-2]
-            != func_sig.return_annotation.__qualname__[:-2]
+            pc_params[-1].annotation.__qualname__
+            != func_sig.return_annotation.__qualname__ + ".M"
         ):
             raise ValueError(
                 "Precondition last parameter type does not match function return type"
             )
 
-        args.append(pc_params[-1].annotation.free("ret."))
+        args.append(pc_params[-1].annotation.free("ret_"))
 
         Globals._rules.append(
             Rule(
                 fn=func,
                 head=args[-1],
                 dependencies=args[:-1],
-                checks=pc(*args),
+                checks=[p.relation() for p in pc(*args)],
             )
         )
 
         return func
 
     return wrapper
+
+
+def event(cls):
+    return cls
+
+
+def analysis(cls):
+    return cls
 
 
 class Query:

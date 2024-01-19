@@ -18,30 +18,25 @@ class TimeSort(Sort):
 
     @override
     def var(self, s: str) -> Var:
-        return TimeVar(s)
+        class V(Var, Time):
+            pass
 
-
-TIME = TimeSort()
+        return V(s)
 
 
 class Time(Term):
+    _sort: ClassVar[Sort] = TimeSort()
+
     @override
     @classmethod
     def sort(cls) -> Sort:
-        return TIME
+        return cls._sort
 
     def __eq__(self, other) -> "TimeEq":  # type: ignore[override]
         return TimeEq(self, other)
 
     def __lt__(self, other) -> "TimeLt":  # type: ignore[override]
         return TimeLt(self, other)
-
-    def uniq(self) -> "TimeUnique":
-        return TimeUnique(self)
-
-
-class TimeVar(Var, Time):
-    pass
 
 
 class TimeLit(Time):
@@ -58,34 +53,15 @@ class TimeLit(Time):
 
 
 @dataclass
-class TimeEq(Atom):
+class TimeEq(Predicate):
     lhs: Time
     rhs: Time
 
-    @classmethod
-    def dl_decl(cls) -> Optional[str]:
-        return None
-
-    def dl_repr(self) -> str:
-        return f"{self.lhs.dl_repr()} = {self.rhs.dl_repr()}"
-
 
 @dataclass
-class TimeLt(Atom):
+class TimeLt(Predicate):
     lhs: Time
     rhs: Time
-
-    @classmethod
-    def dl_decl(cls) -> Optional[str]:
-        return None
-
-    def dl_repr(self) -> str:
-        return f"{self.lhs.dl_repr()} < {self.rhs.dl_repr()}"
-
-
-@dataclass
-class TimeUnique(Atom):
-    t: Time
 
 
 # Condition
@@ -102,24 +78,22 @@ class CondSort(Sort):
 
     @override
     def var(cls, name: str) -> Var:
-        return CondVar(name)
+        class V(Var, Cond):
+            pass
 
-
-COND = CondSort()
+        return V(name)
 
 
 class Cond(Term):
+    _sort: ClassVar[Sort] = CondSort()
+
     @override
     @classmethod
     def sort(cls) -> Sort:
-        return COND
+        return cls._sort
 
     def __eq__(self, other) -> "CondEq":  # type: ignore[override]
         return CondEq(self, other)
-
-
-class CondVar(Var, Cond):
-    pass
 
 
 class CondLit(Cond):
@@ -139,62 +113,45 @@ class CondLit(Cond):
 
 
 @dataclass
-class CondEq(Atom):
+class CondEq(Predicate):
     lhs: Cond
     rhs: Cond
-
-    @classmethod
-    def dl_decl(cls) -> Optional[str]:
-        return None
-
-    def dl_repr(self) -> str:
-        return f"{self.lhs.dl_repr()} = {self.rhs.dl_repr()}"
-
-
-###############################################################################
-# Helper relations
-
-
-@dataclass
-class TCAtom(Atom):
-    t: Time
-    c: Cond
 
 
 ###############################################################################
 # Data
 
 
+@event
+@dataclass
 class Infect:
-    class M(TCAtom):
-        pass
+    library: str
 
-    @dataclass
-    class D:
-        library: str
+    class M(Metadata):
+        t: Time
+        c: Cond
 
 
+@event
+@dataclass
 class Seq:
-    class M(TCAtom):
-        pass
+    path: str
 
-    @dataclass
-    class D:
-        path: str
+    class M(Metadata):
+        t: Time
+        c: Cond
 
 
+@analysis
 @dataclass
 class PhenotypeScore:
-    @dataclass
-    class M(Atom):
+    fold_change: list[float]
+    sig: list[float]
+
+    class M(Metadata):
         ti: Time
         tf: Time
         c: Cond
-
-    @dataclass
-    class D:
-        fold_change: list[float]
-        sig: list[float]
 
 
 ###############################################################################
@@ -206,7 +163,7 @@ def pc(
     seq1: Seq.M,
     seq2: Seq.M,
     ret: PhenotypeScore.M,
-) -> list[Atom]:
+) -> list[Predicate]:
     return [
         infection.t < seq1.t,
         seq1.t < seq2.t,
@@ -220,10 +177,10 @@ def pc(
 
 @precondition(pc)
 def ttest_enrichment(
-    infection: Infect.D,
-    seq1: Seq.D,
-    seq2: Seq.D,
-) -> PhenotypeScore.D:
+    infection: Infect,
+    seq1: Seq,
+    seq2: Seq,
+) -> PhenotypeScore:
     with open(infection.library, "r") as lib_file:
         lib = lib_file.read()
 
@@ -240,18 +197,18 @@ def ttest_enrichment(
         tvalue, pvalue = scipy.stats.ttest_ind(...)  # type: ignore
         fold_change.append(tvalue)
         sig.append(pvalue)
-    return PhenotypeScore.D(fold_change, sig)
+    return PhenotypeScore(fold_change, sig)
 
 
 @precondition(pc)
 def mageck_enrichment(
-    infection: Infect.D,
-    seq1: Seq.D,
-    seq2: Seq.D,
-) -> PhenotypeScore.D:
+    infection: Infect,
+    seq1: Seq,
+    seq2: Seq,
+) -> PhenotypeScore:
     mageck_output = subprocess.check_output(["mageck", ...])  # type: ignore
     fold_change, sig = parse_mageck_output(mageck_output)  # type: ignore
-    return PhenotypeScore.D(fold_change, sig)
+    return PhenotypeScore(fold_change, sig)
 
 
 def pc_wrong(
@@ -259,7 +216,7 @@ def pc_wrong(
     seq1: Seq.M,
     seq2: Seq.M,
     ret: PhenotypeScore.M,
-) -> list[Atom]:
+) -> list[Predicate]:
     return [
         infection.t > seq1.t,
         seq1.t < seq2.t,
@@ -273,8 +230,8 @@ def pc_wrong(
 
 @precondition(pc_wrong)
 def wrong_fn(
-    infection: Infect.D,
-    seq1: Seq.D,
-    seq2: Seq.D,
-) -> PhenotypeScore.D:
+    infection: Infect,
+    seq1: Seq,
+    seq2: Seq,
+) -> PhenotypeScore:
     return ...  # type: ignore
