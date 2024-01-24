@@ -158,6 +158,15 @@ class Seq(Event):
 
 
 @dataclass
+class Distribution(Analysis):
+    histogram: list[float]
+
+    class M(Metadata):
+        t: Time
+        c: Cond
+
+
+@dataclass
 class PhenotypeScore(Analysis):
     fold_change: list[float]
     sig: list[float]
@@ -171,8 +180,10 @@ class PhenotypeScore(Analysis):
 ###############################################################################
 # API
 
+# MAGeCK
 
-def pc(
+
+def mageck_pc(
     infection: Infect.M,
     seq1: Seq.M,
     seq2: Seq.M,
@@ -189,32 +200,7 @@ def pc(
     ]
 
 
-@precondition(lib, pc)
-def ttest_enrichment(
-    infection: Infect,
-    seq1: Seq,
-    seq2: Seq,
-) -> PhenotypeScore:
-    with open(infection.library, "r") as lib_file:
-        lib = lib_file.read()
-
-    with open(seq1.path, "r") as seq1_file:
-        fasta1 = seq1_file.read()
-
-    with open(seq2.path, "r") as seq2_file:
-        fasta2 = seq2_file.read()
-
-    count_matrix = make_count_matrix(lib, fasta1, fasta2)  # type: ignore
-    fold_change: list[float] = []
-    sig: list[float] = []
-    for gene, before_count, after_count in count_matrix:
-        tvalue, pvalue = scipy.stats.ttest_ind(...)  # type: ignore
-        fold_change.append(tvalue)
-        sig.append(pvalue)
-    return PhenotypeScore(fold_change=fold_change, sig=sig)
-
-
-@precondition(lib, pc)
+@precondition(lib, mageck_pc)
 def mageck_enrichment(
     infection: Infect,
     seq1: Seq,
@@ -223,6 +209,51 @@ def mageck_enrichment(
     mageck_output = subprocess.check_output(["mageck", ...])  # type: ignore
     fold_change, sig = parse_mageck_output(mageck_output)  # type: ignore
     return PhenotypeScore(fold_change=fold_change, sig=sig)
+
+
+# quantify
+
+
+def quantify_pc(
+    infection: Infect.M,
+    seq: Seq.M,
+    ret: Distribution.M,
+):
+    return [
+        infection.c == seq.c,
+        infection.t < seq.t,
+        ret.t == seq.t,
+        ret.c == seq.c,
+    ]
+
+
+@precondition(lib, quantify_pc)
+def quantify(
+    infection: Infect,
+    seq: Seq,
+) -> Distribution:
+    return ...  # type: ignore
+
+
+# t-test
+
+
+def ttest_pc(d1: Distribution.M, d2: Distribution.M, ret: PhenotypeScore.M):
+    return [
+        d1.c == d2.c,
+        d1.t < d2.t,
+        ret.c == d1.c,
+        ret.ti == d1.t,
+        ret.tf == d2.t,
+    ]
+
+
+@precondition(lib, ttest_pc)
+def ttest_enrichment(d1: Distribution, d2: Distribution) -> PhenotypeScore:
+    return ...  # type: ignore
+
+
+# wrong
 
 
 def pc_wrong(

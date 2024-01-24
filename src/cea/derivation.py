@@ -141,10 +141,10 @@ class CLIInteractor(Interactor):
         self, rules: list[tuple[Rule, list[Assignment]]]
     ) -> tuple[Rule, list[Assignment]]:
         print("\nSelect a rule to use:")
-        valid_rules = [r for (r, aa) in rules if aa]
-        for i, r in enumerate(valid_rules):
+        valid_rules = [(r, aa) for (r, aa) in rules if aa]
+        for i, (r, _) in enumerate(valid_rules):
             print(f"{i}. {r.name()}")
-        return rules[int(input("> "))]
+        return valid_rules[int(input("> "))]
 
     def select_assignment(self, assignments: list[Assignment]) -> Assignment:
         if len(assignments) == 1:
@@ -189,6 +189,7 @@ class Constructor:
             selected_rule, possible_assignments = self._interactor.select_rule(
                 [(r, self._rule_options(goal_atom, r)) for r in rules]
             )
+            print(possible_assignments)
 
             selected_assignment = self._interactor.select_assignment(
                 possible_assignments
