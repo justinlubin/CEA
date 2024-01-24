@@ -109,27 +109,29 @@ def precondition(
             raise ValueError("Precondition length does not match function length + 1")
 
         args: list[Metadata] = []
-        for pp, fp in zip(pc_params, func_params):
-            if pp.name != fp.name:
+        for pc_param, func_param in zip(pc_params, func_params):
+            if pc_param.name != func_param.name:
                 raise ValueError(
                     "Precondition parameter name does not match parameter name"
                 )
 
-            assert issubclass(fp.annotation, Event) or issubclass(
-                fp.annotation, Analysis
-            )
+            assert issubclass(pc_param.annotation, Metadata)
+            assert issubclass(func_param.annotation, Value)
 
-            if not fp.annotation.matches(pp.annotation):
+            if pc_param.annotation != func_param.annotation.M:
                 raise ValueError(
                     "Precondition parameter type does not match function parameter type"
                 )
 
-            args.append(pp.annotation.free(f"{fp.name}__"))
+            args.append(pc_param.annotation.free(f"{pc_param.name}__"))
 
         if pc_params[-1].name != "ret":
             raise ValueError("Precondition last parameter name not 'ret'")
 
-        if not func_sig.return_annotation.matches(pc_params[-1].annotation):
+        if not func_sig.return_annotation._parent.matches(
+            d=func_sig.return_annotation,
+            m=pc_params[-1].annotation,
+        ):
             raise ValueError(
                 "Precondition last parameter type does not match function return type"
             )
@@ -150,19 +152,33 @@ def precondition(
     return wrapper
 
 
-class Event:
+class Value(metaclass=ABCMeta):
+    class D:
+        ...
+
     class M(Metadata):
-        pass
+        ...
+
+    d: D
+    m: M
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.M._parent = cls
+        cls.D._parent = cls
+
+    def __init__(self, d: D, m: M):
+        self.d = d
+        self.m = m
 
     @classmethod
-    def matches(cls, m: type) -> bool:
-        return m == cls.M
+    def matches(cls, d: type, m: type):
+        return d == cls.D and m == cls.M
 
 
-class Analysis(metaclass=ABCMeta):
-    class M(Metadata):
-        pass
+class Event(Value):
+    pass
 
-    @classmethod
-    def matches(cls, m: type) -> bool:
-        return m == cls.M
+
+class Analysis(Value):
+    pass

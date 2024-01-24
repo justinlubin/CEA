@@ -189,7 +189,6 @@ class Constructor:
             selected_rule, possible_assignments = self._interactor.select_rule(
                 [(r, self._rule_options(goal_atom, r)) for r in rules]
             )
-            print(possible_assignments)
 
             selected_assignment = self._interactor.select_assignment(
                 possible_assignments

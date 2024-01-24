@@ -135,18 +135,20 @@ class CondEq(Metadata):
 # Events
 
 
-@dataclass
 class Infect(Event):
-    library: str
+    @dataclass
+    class D:
+        library: str
 
     class M(Metadata):
         t: Time
         c: Cond
 
 
-@dataclass
 class Seq(Event):
-    path: str
+    @dataclass
+    class D:
+        path: str
 
     class M(Metadata):
         t: Time
@@ -157,19 +159,21 @@ class Seq(Event):
 # Analysis types
 
 
-@dataclass
 class Distribution(Analysis):
-    histogram: list[float]
+    @dataclass
+    class D:
+        histogram: list[float]
 
     class M(Metadata):
         t: Time
         c: Cond
 
 
-@dataclass
 class PhenotypeScore(Analysis):
-    fold_change: list[float]
-    sig: list[float]
+    @dataclass
+    class D:
+        fold_change: list[float]
+        sig: list[float]
 
     class M(Metadata):
         ti: Time
@@ -205,10 +209,10 @@ def mageck_enrichment(
     infection: Infect,
     seq1: Seq,
     seq2: Seq,
-) -> PhenotypeScore:
+) -> PhenotypeScore.D:
     mageck_output = subprocess.check_output(["mageck", ...])  # type: ignore
     fold_change, sig = parse_mageck_output(mageck_output)  # type: ignore
-    return PhenotypeScore(fold_change=fold_change, sig=sig)
+    return PhenotypeScore.D(fold_change=fold_change, sig=sig)
 
 
 # quantify
@@ -231,14 +235,18 @@ def quantify_pc(
 def quantify(
     infection: Infect,
     seq: Seq,
-) -> Distribution:
+) -> Distribution.D:
     return ...  # type: ignore
 
 
 # t-test
 
 
-def ttest_pc(d1: Distribution.M, d2: Distribution.M, ret: PhenotypeScore.M):
+def ttest_pc(
+    d1: Distribution.M,
+    d2: Distribution.M,
+    ret: PhenotypeScore.M,
+):
     return [
         d1.c == d2.c,
         d1.t < d2.t,
@@ -249,7 +257,10 @@ def ttest_pc(d1: Distribution.M, d2: Distribution.M, ret: PhenotypeScore.M):
 
 
 @precondition(lib, ttest_pc)
-def ttest_enrichment(d1: Distribution, d2: Distribution) -> PhenotypeScore:
+def ttest_enrichment(
+    d1: Distribution,
+    d2: Distribution,
+) -> PhenotypeScore.D:
     return ...  # type: ignore
 
 
@@ -278,5 +289,5 @@ def wrong_fn(
     infection: Infect,
     seq1: Seq,
     seq2: Seq,
-) -> PhenotypeScore:
+) -> PhenotypeScore.D:
     return ...  # type: ignore

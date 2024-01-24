@@ -8,7 +8,7 @@ FlexibleTerm = int | fw.Term
 
 
 class Program:
-    _trace: dict[fw.Metadata, fw.Event]
+    _trace: dict[fw.Metadata, fw.Event.D]
     _query: Optional[fw.Metadata]
     _library: fw.Library
 
@@ -28,7 +28,7 @@ class Program:
         at: dict[str, FlexibleTerm],
         where: dict[str, object],
     ):
-        self._trace[E.M(**Program.wrap_all(at))] = E(**where)
+        self._trace[E.M(**Program.wrap_all(at))] = E.D(**where)
 
     def query(
         self,
