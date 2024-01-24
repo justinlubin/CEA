@@ -46,6 +46,7 @@ class Program:
                 base_program=dl_prog,
                 interactor=der.CLIInteractor(),
             ).construct(initial_goal=goal_atom)
+            # print(*[str(t) for t in dt.postorder()], sep="\n")
         else:
             print(">>> Not possible! <<<")
 

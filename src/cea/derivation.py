@@ -1,4 +1,5 @@
 from abc import ABCMeta, abstractmethod
+from typing import Iterator
 
 from . import util
 
@@ -12,7 +13,7 @@ PathedAtom = tuple[Atom, Breadcrumbs]
 
 class Tree(metaclass=ABCMeta):
     @abstractmethod
-    def tree_string(self, depth: int = 1) -> str:
+    def children(self) -> list["Tree"]:
         ...
 
     @abstractmethod
@@ -27,6 +28,17 @@ class Tree(metaclass=ABCMeta):
     ) -> "Tree":
         ...
 
+    @abstractmethod
+    def tree_string(self, depth: int = 1) -> str:
+        ...
+
+    def postorder(self) -> list["Tree"]:
+        ret = []
+        for c in self.children():
+            ret.extend(c.postorder())
+        ret.append(self)
+        return ret
+
     def __str__(self) -> str:
         return self.tree_string(depth=0)
 
@@ -37,12 +49,11 @@ class Step(Tree):
     consequent: Atom
     antecedents: list[Tree]
 
-    def tree_string(self, depth: int = 1) -> str:
-        ret = "-" * depth + f" [{self.label.__name__}] " + self.consequent.dl_repr()
-        for a in self.antecedents:
-            ret += "\n" + a.tree_string(depth=depth + 1)
-        return ret
+    @override
+    def children(self) -> list[Tree]:
+        return self.antecedents
 
+    @override
     def goals(self) -> list[PathedAtom]:
         return util.flatten(
             [
@@ -51,6 +62,7 @@ class Step(Tree):
             ]
         )
 
+    @override
     def replace(
         self,
         breadcrumbs: Breadcrumbs,
@@ -71,35 +83,56 @@ class Step(Tree):
             ),
         )
 
+    @override
+    def tree_string(self, depth: int = 1) -> str:
+        ret = "-" * depth + f" [{self.label.__name__}] " + self.consequent.dl_repr()
+        for a in self.antecedents:
+            ret += "\n" + a.tree_string(depth=depth + 1)
+        return ret
+
 
 @dataclass
 class Goal(Tree):
     goal: Atom
 
-    def tree_string(self, depth: int = 1):
-        return "-" * depth + " *** " + self.goal.dl_repr()
+    @override
+    def children(self) -> list[Tree]:
+        return []
 
+    @override
     def goals(self) -> list[PathedAtom]:
         return [(self.goal, [])]
 
+    @override
     def replace(self, breadcrumbs: Breadcrumbs, new_subtree: Tree) -> Tree:
         if not breadcrumbs:
             return new_subtree
         raise ValueError("Invalid breadcrumbs for derivation tree")
+
+    @override
+    def tree_string(self, depth: int = 1):
+        return "-" * depth + " *** " + self.goal.dl_repr()
 
 
 @dataclass
 class Leaf(Tree):
     leaf: Atom
 
-    def tree_string(self, depth: int = 1):
-        return "-" * depth + " [leaf] " + self.leaf.dl_repr()
+    @override
+    def children(self) -> list[Tree]:
+        return []
 
+    @override
     def goals(self) -> list[PathedAtom]:
         return []
 
+    @override
     def replace(self, breadcrumbs: Breadcrumbs, new_subtree: Tree) -> Tree:
         raise ValueError("Cannot replace a leaf")
+
+    @override
+    def tree_string(self, depth: int = 1):
+        return "-" * depth + " [leaf] " + self.leaf.dl_repr()
 
 
 # Interactions
