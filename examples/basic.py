@@ -1,10 +1,11 @@
-import cea.dsl
+from cea.dsl import Program
+from cea.stdbiolib import *
 
-p = cea.dsl.Program()
+p = Program()
 c = p.Condition()
 
-p.Infect(t=1, c=c)
-p.Seq(t=3, c=c)
-p.Seq(t=8, c=c)
+p.do(Infect, at=dict(t=1, c=c), where=dict(library="library.csv"))
+p.do(Seq, at=dict(t=3, c=c), where=dict(path="seq1.csv"))
+p.do(Seq, at=dict(t=8, c=c), where=dict(path="seq2.csv"))
 
-p.PhenotypeScore(ti=3, tf=8, c=c).query()
+p.query(PhenotypeScore, at=dict(ti=3, tf=8, c=c))

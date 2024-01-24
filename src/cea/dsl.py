@@ -4,65 +4,58 @@ from . import derivation as der
 from . import framework as fw
 from . import stdbiolib
 
+FlexibleTerm = int | fw.Term
+
 
 class Program:
-    _trace: list[fw.Atom]
-    _query: Optional[fw.Atom]
+    _trace: dict[fw.Metadata, fw.Event]
+    _query: Optional[fw.Metadata]
     _library: fw.Library
 
     def __init__(self, *libraries: fw.Library) -> None:
         if stdbiolib.lib not in libraries:
             libraries += (stdbiolib.lib,)
 
-        self._trace = []
+        self._trace = {}
         self._library = fw.Library.merge(libraries)
 
     def Condition(self) -> stdbiolib.CondLit:
         return stdbiolib.CondLit()
 
-    def __getattr__(self, attr: str):
-        selected_relation = None
-        for rel in self._library.relations():
-            if rel.name() == attr + "_M":
-                selected_relation = rel
-                break
-        if not selected_relation:
-            raise ValueError(f"Relation not found: {attr}")
-
-        return lambda **kwargs: self._save_relation(selected_relation, kwargs)
-
-    def query(self, run=True) -> None:
-        self._query = self._trace.pop()
-
-        if run:
-            dl_prog = fw.DatalogProgram(
-                edbs=self._trace,
-                idbs=self._library.rules(),
-            )
-            if dl_prog.run_query(query=fw.Query([self._query])):
-                print(">>> Possible! <<<")
-                der.Constructor(
-                    base_program=dl_prog,
-                    interactor=der.CLIInteractor(),
-                ).construct(initial_goal=self._query)
-            else:
-                print(">>> Not possible! <<<")
-
-    def _save_relation(
+    def do(
         self,
-        relation: fw.Relation,
-        args: dict[str, int | fw.Term],
-    ) -> "Program":
-        def wrap(a: int | fw.Term) -> fw.Term:
-            if isinstance(a, int):
-                return stdbiolib.TimeLit(a)
-            else:
-                return a
+        E: type[fw.Event],
+        at: dict[str, FlexibleTerm],
+        where: dict[str, object],
+    ):
+        self._trace[E.M(**Program.wrap_all(at))] = E(**where)
 
-        self._trace.append(
-            fw.DynamicAtom(
-                relation=relation, args={k: wrap(v) for k, v in args.items()}
-            )
+    def query(
+        self,
+        A: type[fw.Analysis],
+        at: dict[str, FlexibleTerm],
+    ) -> None:
+        dl_prog = fw.DatalogProgram(
+            edbs=list(self._trace.keys()),
+            idbs=self._library.rules(),
         )
+        goal_atom = A.M(**Program.wrap_all(at))
+        if dl_prog.run_query(query=fw.Query([goal_atom])):
+            print(">>> Possible! <<<")
+            der.Constructor(
+                base_program=dl_prog,
+                interactor=der.CLIInteractor(),
+            ).construct(initial_goal=goal_atom)
+        else:
+            print(">>> Not possible! <<<")
 
-        return self
+    @staticmethod
+    def wrap(x: FlexibleTerm) -> fw.Term:
+        if isinstance(x, int):
+            return stdbiolib.TimeLit(x)
+        else:
+            return x
+
+    @staticmethod
+    def wrap_all(xs: dict[str, FlexibleTerm]) -> dict[str, fw.Term]:
+        return {k: Program.wrap(v) for k, v in xs.items()}

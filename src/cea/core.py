@@ -35,14 +35,14 @@ class Term(metaclass=ABCMeta):
     def __str__(self) -> str:
         return self.dl_repr()
 
-    def substitute(self, lhs: str, rhs: "Term") -> "Term":
-        return self
-
     def free_vars(self) -> set["Var"]:
         return set()
 
     def ground(self) -> bool:
         return True
+
+    def substitute(self, lhs: str, rhs: "Term") -> "Term":
+        return self
 
 
 class Var(Term):
@@ -56,19 +56,19 @@ class Var(Term):
         return self._name
 
     @override
-    def substitute(self, lhs: str, rhs: Term) -> Term:
-        if lhs == self.dl_repr():
-            return rhs
-        else:
-            return self
+    def free_vars(self) -> set["Var"]:
+        return {self}
 
     @override
     def ground(self) -> bool:
         return False
 
     @override
-    def free_vars(self) -> set["Var"]:
-        return {self}
+    def substitute(self, lhs: str, rhs: Term) -> Term:
+        if lhs == self.dl_repr():
+            return rhs
+        else:
+            return self
 
     def __hash__(self) -> int:
         return hash(self._name)
@@ -96,14 +96,19 @@ class Relation:
         self._arity = arity
         self._infix_symbol = infix_symbol
 
-    def name(self) -> str:
-        return self._name
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, Relation):
+            return False
+        if self.name() != other.name():
+            return False
+        if self.infix_symbol != other.infix_symbol:
+            return False
+        if self.arity() != other.arity():
+            return False
+        return True
 
     def arity(self) -> Arity:
         return self._arity
-
-    def infix_symbol(self) -> Optional[str]:
-        return self._infix_symbol
 
     def dl_repr(self, output: bool = False) -> str:
         if self.infix_symbol():
@@ -124,22 +129,17 @@ class Relation:
 
         return ret
 
-    def free_args(self, prefix: str) -> dict[str, Term]:
+    def free_assignment(self, prefix: str) -> Assignment:
         return {name: sort.var(prefix + name) for name, sort in self.arity().items()}
 
-    def __eq__(self, other) -> bool:
-        if not isinstance(other, Relation):
-            return False
-        if self.name() != other.name():
-            return False
-        if self.infix_symbol != other.infix_symbol:
-            return False
-        if self.arity() != other.arity():
-            return False
-        return True
+    def infix_symbol(self) -> Optional[str]:
+        return self._infix_symbol
+
+    def name(self) -> str:
+        return self._name
 
 
-class Atom:
+class Atom(metaclass=ABCMeta):
     @abstractmethod
     def get_arg(self, key: str) -> Term:
         ...
@@ -151,6 +151,19 @@ class Atom:
     @abstractmethod
     def relation(self) -> Relation:
         ...
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, Atom):
+            return False
+        if self.relation() != other.relation():
+            return False
+        for k in self.relation().arity():
+            if self.get_arg(k) != other.get_arg(k):
+                return False
+        return True
+
+    def __hash__(self) -> int:
+        return hash(self.dl_repr())
 
     def dl_repr(self) -> str:
         infix_symbol = self.relation().infix_symbol()
@@ -173,18 +186,6 @@ class Atom:
                 + ")"
             )
 
-    def substitute(self, lhs: str, rhs: Term) -> "Atom":
-        new_atom = self
-        for k in self.relation().arity():
-            new_atom = new_atom.set_arg(k, self.get_arg(k).substitute(lhs, rhs))
-        return new_atom
-
-    def substitute_all(self, assignment: Assignment) -> "Atom":
-        new_atom = self
-        for lhs, rhs in assignment.items():
-            new_atom = new_atom.substitute(lhs, rhs)
-        return new_atom
-
     def free_vars(self) -> set[Var]:
         return set.union(
             *[self.get_arg(k).free_vars() for k in self.relation().arity()]
@@ -196,35 +197,17 @@ class Atom:
                 return False
         return True
 
-    def __eq__(self, other) -> bool:
-        if not isinstance(other, Atom):
-            return False
-        if self.relation() != other.relation():
-            return False
+    def substitute(self, lhs: str, rhs: Term) -> "Atom":
+        new_atom = self
         for k in self.relation().arity():
-            if self.get_arg(k) != other.get_arg(k):
-                return False
-        return True
+            new_atom = new_atom.set_arg(k, self.get_arg(k).substitute(lhs, rhs))
+        return new_atom
 
-
-@dataclass
-class Rule:
-    label: Callable
-    head: Atom
-    dependencies: tuple[Atom, ...]
-    checks: tuple[Atom, ...]
-
-    def name(self) -> str:
-        return self.label.__name__
-
-    def body(self) -> tuple[Atom, ...]:
-        return self.dependencies + self.checks
-
-    def dl_repr(self) -> str:
-        comment = f"// {self.label.__name__}"
-        lhs = self.head.dl_repr()
-        rhs = ",\n  ".join([r.dl_repr() for r in self.body()]) + "."
-        return f"{comment}\n{lhs} :-\n  {rhs}"
+    def substitute_all(self, assignment: Assignment) -> "Atom":
+        new_atom = self
+        for lhs, rhs in assignment.items():
+            new_atom = new_atom.substitute(lhs, rhs)
+        return new_atom
 
 
 class DynamicAtom(Atom):
@@ -263,8 +246,28 @@ class DynamicAtom(Atom):
     def free(relation: Relation, prefix: str) -> "DynamicAtom":
         return DynamicAtom(
             relation=relation,
-            args=relation.free_args(prefix),
+            args=relation.free_assignment(prefix),
         )
+
+
+@dataclass
+class Rule:
+    label: Callable
+    head: Atom
+    dependencies: tuple[Atom, ...]
+    checks: tuple[Atom, ...]
+
+    def body(self) -> tuple[Atom, ...]:
+        return self.dependencies + self.checks
+
+    def dl_repr(self) -> str:
+        comment = f"// {self.label.__name__}"
+        lhs = self.head.dl_repr()
+        rhs = ",\n  ".join([r.dl_repr() for r in self.body()]) + "."
+        return f"{comment}\n{lhs} :-\n  {rhs}"
+
+    def name(self) -> str:
+        return self.label.__name__
 
 
 class Query:
@@ -299,7 +302,6 @@ class Query:
         return self._rule.head.relation()
 
 
-@dataclass
 class DatalogProgram:
     _edbs: list[Atom]
     _idbs: list[Rule]
@@ -323,12 +325,6 @@ class DatalogProgram:
         self._edbs = edbs
         self._idbs = idbs
 
-    def edbs(self) -> list[Atom]:
-        return self._edbs
-
-    def idbs(self) -> list[Rule]:
-        return self._idbs
-
     def dl_repr(self) -> str:
         blocks = []
 
@@ -347,6 +343,12 @@ class DatalogProgram:
         blocks.append("")
 
         return "\n".join(blocks)
+
+    def edbs(self) -> list[Atom]:
+        return self._edbs
+
+    def idbs(self) -> list[Rule]:
+        return self._idbs
 
     def run_query(self, query: Query) -> list[Assignment]:
         dl_prog = self.dl_repr() + "\n" + query.dl_repr()

@@ -1,46 +1,33 @@
 import inspect
-from typing import Callable, Optional, TypeVar, ClassVar, ParamSpec, Sequence, Iterable
+from typing import (
+    Callable,
+    Optional,
+    TypeVar,
+    ClassVar,
+    ParamSpec,
+    Sequence,
+    Iterable,
+)
 
 from .core import *
 
 
 class Library:
-    _events: list[Relation]
-    _analyses: list[Relation]
     _rules: list[Rule]
 
     def __init__(self):
-        self._events = []
-        self._analyses = []
         self._rules = []
-
-    def events(self) -> list[Relation]:
-        return self._events
-
-    def analyses(self) -> list[Relation]:
-        return self._analyses
-
-    def rules(self) -> list[Rule]:
-        return self._rules
-
-    def register_event(self, event: Relation) -> None:
-        self._events.append(event)
-
-    def register_analysis(self, analysis: Relation) -> None:
-        self._analyses.append(analysis)
 
     def register_rule(self, rule: Rule) -> None:
         self._rules.append(rule)
 
-    def relations(self) -> list[Relation]:
-        return self.events() + self.analyses()
+    def rules(self) -> list[Rule]:
+        return self._rules
 
     @staticmethod
     def merge(libraries: Iterable["Library"]) -> "Library":
         ret = Library()
         for lib in libraries:
-            ret._events.extend(lib._events)
-            ret._analyses.extend(lib._analyses)
             ret._rules.extend(lib._rules)
         return ret
 
@@ -67,13 +54,9 @@ class Metadata(Atom):
     def __init__(self, **kwargs: Term):
         ra = self.relation().arity()
         assert kwargs.keys() == ra.keys()
-        for k in self.relation().arity():
+        for k in ra:
             assert kwargs[k].sort() == ra[k]
             setattr(self, k, kwargs[k])
-
-    @classmethod
-    def class_relation(cls) -> Relation:
-        return cls._relation
 
     @override
     def get_arg(self, key: str) -> Term:
@@ -94,6 +77,10 @@ class Metadata(Atom):
         return self.class_relation()
 
     @classmethod
+    def class_relation(cls) -> Relation:
+        return cls._relation
+
+    @classmethod
     def infix_symbol(cls) -> Optional[str]:
         return None
 
@@ -101,7 +88,7 @@ class Metadata(Atom):
 
     @classmethod
     def free(cls: type[M], prefix: str) -> M:
-        return cls(**cls.class_relation().free_args(prefix))
+        return cls(**cls.class_relation().free_assignment(prefix))
 
 
 P = ParamSpec("P")
@@ -128,29 +115,24 @@ def precondition(
                     "Precondition parameter name does not match parameter name"
                 )
 
-            if pp.annotation.__qualname__ != fp.annotation.__qualname__ + ".M":
+            assert issubclass(fp.annotation, Event) or issubclass(
+                fp.annotation, Analysis
+            )
+
+            if not fp.annotation.matches(pp.annotation):
                 raise ValueError(
                     "Precondition parameter type does not match function parameter type"
                 )
-
-            if not issubclass(pp.annotation, Metadata):
-                raise ValueError("Precondition parameter type is not metadata")
 
             args.append(pp.annotation.free(f"{fp.name}__"))
 
         if pc_params[-1].name != "ret":
             raise ValueError("Precondition last parameter name not 'ret'")
 
-        if (
-            pc_params[-1].annotation.__qualname__
-            != func_sig.return_annotation.__qualname__ + ".M"
-        ):
+        if not func_sig.return_annotation.matches(pc_params[-1].annotation):
             raise ValueError(
                 "Precondition last parameter type does not match function return type"
             )
-
-        if not issubclass(pc_params[-1].annotation, Metadata):
-            raise ValueError("Precondition last parameter type is not metadata")
 
         args.append(pc_params[-1].annotation.free("ret__"))
 
@@ -168,17 +150,19 @@ def precondition(
     return wrapper
 
 
-def event(library: Library) -> Callable:
-    def wrapper(cls):
-        library.register_event(cls.M.class_relation())
-        return cls
+class Event:
+    class M(Metadata):
+        pass
 
-    return wrapper
+    @classmethod
+    def matches(cls, m: type) -> bool:
+        return m == cls.M
 
 
-def analysis(library: Library) -> Callable:
-    def wrapper(cls):
-        library.register_analysis(cls.M.class_relation())
-        return cls
+class Analysis(metaclass=ABCMeta):
+    class M(Metadata):
+        pass
 
-    return wrapper
+    @classmethod
+    def matches(cls, m: type) -> bool:
+        return m == cls.M

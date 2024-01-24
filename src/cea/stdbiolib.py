@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from .framework import *
 
 lib = Library()
@@ -136,9 +135,8 @@ class CondEq(Metadata):
 # Events
 
 
-@event(lib)
 @dataclass
-class Infect:
+class Infect(Event):
     library: str
 
     class M(Metadata):
@@ -146,9 +144,8 @@ class Infect:
         c: Cond
 
 
-@event(lib)
 @dataclass
-class Seq:
+class Seq(Event):
     path: str
 
     class M(Metadata):
@@ -160,9 +157,8 @@ class Seq:
 # Analysis types
 
 
-@analysis(lib)
 @dataclass
-class PhenotypeScore:
+class PhenotypeScore(Analysis):
     fold_change: list[float]
     sig: list[float]
 
@@ -181,7 +177,7 @@ def pc(
     seq1: Seq.M,
     seq2: Seq.M,
     ret: PhenotypeScore.M,
-) -> list[Atom]:
+) -> list[Metadata]:
     return [
         infection.t < seq1.t,
         seq1.t < seq2.t,
@@ -209,13 +205,13 @@ def ttest_enrichment(
         fasta2 = seq2_file.read()
 
     count_matrix = make_count_matrix(lib, fasta1, fasta2)  # type: ignore
-    fold_change = []
-    sig = []
+    fold_change: list[float] = []
+    sig: list[float] = []
     for gene, before_count, after_count in count_matrix:
         tvalue, pvalue = scipy.stats.ttest_ind(...)  # type: ignore
         fold_change.append(tvalue)
         sig.append(pvalue)
-    return PhenotypeScore(fold_change, sig)
+    return PhenotypeScore(fold_change=fold_change, sig=sig)
 
 
 @precondition(lib, pc)
@@ -226,7 +222,7 @@ def mageck_enrichment(
 ) -> PhenotypeScore:
     mageck_output = subprocess.check_output(["mageck", ...])  # type: ignore
     fold_change, sig = parse_mageck_output(mageck_output)  # type: ignore
-    return PhenotypeScore(fold_change, sig)
+    return PhenotypeScore(fold_change=fold_change, sig=sig)
 
 
 def pc_wrong(
@@ -234,7 +230,7 @@ def pc_wrong(
     seq1: Seq.M,
     seq2: Seq.M,
     ret: PhenotypeScore.M,
-) -> list[Atom]:
+) -> list[Metadata]:
     return [
         infection.t > seq1.t,
         seq1.t < seq2.t,
