@@ -44,7 +44,10 @@ class Program:
             print(">>> Possible! <<<")
             der.Constructor(
                 base_program=dl_prog,
-                interactor=der.CLIInteractor(),
+                interactor=der.CLIInteractor(
+                    goal_mode=der.CLIInteractor.Mode.AUTO,
+                    rule_mode=der.CLIInteractor.Mode.FAST_FORWARD,
+                ),
             ).construct(initial_goal=goal_atom)
             # print(*[str(t) for t in dt.postorder()], sep="\n")
         else:

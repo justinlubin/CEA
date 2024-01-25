@@ -1,5 +1,8 @@
 from abc import ABCMeta, abstractmethod
-from typing import Iterator
+from dataclasses import dataclass
+from typing import assert_never
+
+import enum
 
 from . import util
 
@@ -7,7 +10,7 @@ from .core import *
 
 # Derivation trees
 
-Breadcrumbs = list[int]
+Breadcrumbs = list[str]
 PathedAtom = tuple[Atom, Breadcrumbs]
 
 
@@ -17,7 +20,15 @@ class Tree(metaclass=ABCMeta):
         ...
 
     @abstractmethod
+    def computation(self) -> Optional[Callable]:
+        ...
+
+    @abstractmethod
     def goals(self) -> list[PathedAtom]:
+        ...
+
+    @abstractmethod
+    def is_leaf(self) -> bool:
         ...
 
     @abstractmethod
@@ -29,7 +40,7 @@ class Tree(metaclass=ABCMeta):
         ...
 
     @abstractmethod
-    def tree_string(self, depth: int = 1) -> str:
+    def tree_string(self, depth: int = 1, prefix: str = "") -> str:
         ...
 
     def postorder(self) -> list["Tree"]:
@@ -39,28 +50,37 @@ class Tree(metaclass=ABCMeta):
         ret.append(self)
         return ret
 
-    def __str__(self) -> str:
-        return self.tree_string(depth=0)
+    @staticmethod
+    def _make_dashes(amount: int, dash_size: int = 2) -> str:
+        return "-" * amount * dash_size
 
 
 @dataclass
 class Step(Tree):
     label: Callable
     consequent: Atom
-    antecedents: list[Tree]
+    antecedents: OrderedDict[str, Tree]
 
     @override
     def children(self) -> list[Tree]:
-        return self.antecedents
+        return list(self.antecedents.values())
+
+    @override
+    def computation(self) -> Optional[Callable]:
+        return self.label
 
     @override
     def goals(self) -> list[PathedAtom]:
         return util.flatten(
             [
-                [(g, crumbs + [i]) for g, crumbs in a.goals()]
-                for i, a in enumerate(self.antecedents)
+                [(g, crumbs + [k]) for g, crumbs in a.goals()]
+                for k, a in self.antecedents.items()
             ]
         )
+
+    @override
+    def is_leaf(self) -> bool:
+        return False
 
     @override
     def replace(
@@ -71,23 +91,29 @@ class Step(Tree):
         if not breadcrumbs:
             return new_subtree
         child = breadcrumbs.pop()  # modifies breadcrumbs
-        if child < 0 or child >= len(self.antecedents):
+        if child not in self.antecedents:
             raise ValueError("Invalid breadcrumbs for derivation tree")
         return Step(
             label=self.label,
             consequent=self.consequent,
-            antecedents=(
-                self.antecedents[:child]
-                + [self.antecedents[child].replace(breadcrumbs, new_subtree)]
-                + self.antecedents[child + 1 :]
+            antecedents=OrderedDict(
+                (k, v.replace(breadcrumbs, new_subtree) if k == child else v)
+                for k, v in self.antecedents.items()
             ),
         )
 
     @override
-    def tree_string(self, depth: int = 1) -> str:
-        ret = "-" * depth + f" [{self.label.__name__}] " + self.consequent.dl_repr()
-        for a in self.antecedents:
-            ret += "\n" + a.tree_string(depth=depth + 1)
+    def tree_string(self, depth: int = 1, prefix: str = "") -> str:
+        ret = (
+            f"{self._make_dashes(depth)} {prefix}"
+            + self.consequent.dl_repr()
+            + f" [{self.label.__name__}]"
+        )
+        for k, a in self.antecedents.items():
+            ret += "\n" + a.tree_string(
+                depth=depth + 1,
+                prefix=f"<{k}>: ",
+            )
         return ret
 
 
@@ -100,8 +126,16 @@ class Goal(Tree):
         return []
 
     @override
+    def computation(self) -> Optional[Callable]:
+        return None
+
+    @override
     def goals(self) -> list[PathedAtom]:
         return [(self.goal, [])]
+
+    @override
+    def is_leaf(self) -> bool:
+        return False
 
     @override
     def replace(self, breadcrumbs: Breadcrumbs, new_subtree: Tree) -> Tree:
@@ -110,8 +144,8 @@ class Goal(Tree):
         raise ValueError("Invalid breadcrumbs for derivation tree")
 
     @override
-    def tree_string(self, depth: int = 1):
-        return "-" * depth + " *** " + self.goal.dl_repr()
+    def tree_string(self, depth: int = 1, prefix: str = ""):
+        return self._make_dashes(depth) + f" {prefix}*** " + self.goal.dl_repr()
 
 
 @dataclass
@@ -123,16 +157,24 @@ class Leaf(Tree):
         return []
 
     @override
+    def computation(self) -> Optional[Callable]:
+        return None
+
+    @override
     def goals(self) -> list[PathedAtom]:
         return []
+
+    @override
+    def is_leaf(self) -> bool:
+        return True
 
     @override
     def replace(self, breadcrumbs: Breadcrumbs, new_subtree: Tree) -> Tree:
         raise ValueError("Cannot replace a leaf")
 
     @override
-    def tree_string(self, depth: int = 1):
-        return "-" * depth + " [leaf] " + self.leaf.dl_repr()
+    def tree_string(self, depth: int = 1, prefix: str = ""):
+        return self._make_dashes(depth) + f" {prefix}" + self.leaf.dl_repr() + " [leaf]"
 
 
 # Interactions
@@ -149,8 +191,8 @@ class Interactor(metaclass=ABCMeta):
 
     @abstractmethod
     def select_rule(
-        self, rules: list[tuple[Rule, list[Assignment]]]
-    ) -> tuple[Rule, list[Assignment]]:
+        self, rules: list[tuple[NamedRule, list[Assignment]]]
+    ) -> tuple[NamedRule, list[Assignment]]:
         ...
 
     @abstractmethod
@@ -159,25 +201,51 @@ class Interactor(metaclass=ABCMeta):
 
 
 class CLIInteractor(Interactor):
+    @enum.unique
+    class Mode(enum.Enum):
+        MANUAL = enum.auto()
+        FAST_FORWARD = enum.auto()
+        AUTO = enum.auto()
+
+    _goal_mode: Mode
+    _rule_mode: Mode
+
+    def __init__(self, goal_mode: Mode, rule_mode: Mode):
+        self._goal_mode = goal_mode
+        self._rule_mode = rule_mode
+
     def display_tree(self, dt: Tree) -> None:
-        print("\n===== Derivation tree =====")
+        dt_string = dt.tree_string()
+        width = util.string_width(dt_string)
+        header_prefix = "== DERIVATION TREE "
+        print("\n" + header_prefix + "=" * (width - len(header_prefix)) + "|\n")
         print(dt.tree_string())
-        print("===================================")
+        print("\n" + "=" * width + "|")
 
     def select_goal(self, goals: list[PathedAtom]) -> PathedAtom:
-        print("\nSelect a goal to work on:")
-        for i, (g, _) in enumerate(goals):
-            print(f"{i}. {g.dl_repr()}")
-        return goals[int(input("> "))]
+        auto_prompt = self._auto_prompt(self._goal_mode, goals)
+        if auto_prompt:
+            print(f"\n{auto_prompt} goal:\n\n  {goals[0][0].dl_repr()}")
+            return goals[0]
+        else:
+            print("\nSelect a goal to work on:")
+            for i, (g, _) in enumerate(goals):
+                print(f"{i}. {g.dl_repr()}")
+            return goals[int(input("> "))]
 
     def select_rule(
-        self, rules: list[tuple[Rule, list[Assignment]]]
-    ) -> tuple[Rule, list[Assignment]]:
-        print("\nSelect a rule to use:")
+        self, rules: list[tuple[NamedRule, list[Assignment]]]
+    ) -> tuple[NamedRule, list[Assignment]]:
         valid_rules = [(r, aa) for (r, aa) in rules if aa]
-        for i, (r, _) in enumerate(valid_rules):
-            print(f"{i}. {r.name()}")
-        return valid_rules[int(input("> "))]
+        auto_prompt = self._auto_prompt(self._rule_mode, valid_rules)
+        if auto_prompt:
+            print(f"\n{auto_prompt} rule:\n\n  {valid_rules[0][0].name()}")
+            return valid_rules[0]
+        else:
+            print("\nSelect a rule to use:")
+            for i, (r, _) in enumerate(valid_rules):
+                print(f"{i}. {r.name()}")
+            return valid_rules[int(input("> "))]
 
     def select_assignment(self, assignments: list[Assignment]) -> Assignment:
         if len(assignments) == 1:
@@ -185,7 +253,7 @@ class CLIInteractor(Interactor):
 
         print("\nSelect an assignment to use:")
         for i, a in enumerate(assignments):
-            print(f"{i}. {CLIInteractor._assignment_string(a)}")
+            print(f"{i}. {self._assignment_string(a)}")
         return assignments[int(input("> "))]
 
     @staticmethod
@@ -195,6 +263,21 @@ class CLIInteractor(Interactor):
             + ", ".join(f"{k} -> {v.dl_repr()}" for k, v in assignment.items())
             + "}"
         )
+
+    @staticmethod
+    def _auto_prompt(mode: Mode, choices: list) -> Optional[str]:
+        match mode:
+            case CLIInteractor.Mode.MANUAL:
+                return None
+
+            case CLIInteractor.Mode.FAST_FORWARD:
+                return "Automatically selecting only" if len(choices) == 1 else None
+
+            case CLIInteractor.Mode.AUTO:
+                return "Automatically selecting first"
+
+            case _ as unreachable:
+                assert_never(unreachable)
 
 
 # Construction algorithm
@@ -230,29 +313,31 @@ class Constructor:
             dt = dt.replace(
                 goal_bc,
                 Step(
-                    label=selected_rule.label,
+                    label=selected_rule.label(),
                     consequent=goal_atom,
-                    antecedents=[
-                        self._make_leaf(a.substitute_all(selected_assignment))
-                        for a in selected_rule.dependencies
-                    ],
+                    antecedents=OrderedDict(
+                        (k, self._make_leaf(a.substitute_all(selected_assignment)))
+                        for k, a in selected_rule.rule().dependencies().items()
+                    ),
                 ),
             )
 
-    def _rule_options(self, goal: Atom, rule: Rule) -> list[Assignment]:
-        if rule.head.relation() != goal.relation():
+    def _rule_options(self, goal: Atom, named_rule: NamedRule) -> list[Assignment]:
+        rule = named_rule.rule()
+
+        if rule.head().relation() != goal.relation():
             return []
 
         def make_substitutions(atom: Atom) -> Atom:
             new_atom = atom
-            for k in rule.head.relation().arity():
-                lhs = rule.head.get_arg(k)
+            for k in rule.head().relation().arity():
+                lhs = rule.head().get_arg(k)
                 assert isinstance(lhs, Var)
                 rhs = goal.get_arg(k)
                 new_atom = new_atom.substitute(lhs.dl_repr(), rhs)
             return new_atom
 
-        query = Query([make_substitutions(a) for a in rule.dependencies + rule.checks])
+        query = Query([make_substitutions(a) for a in rule.body()])
         return self._base_program.run_query(query=query)
 
     def _make_leaf(self, atom: Atom) -> Tree:

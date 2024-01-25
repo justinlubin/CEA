@@ -12,3 +12,10 @@ def flatten(xss: list[list[T]]) -> list[T]:
 
 def override(f: T) -> T:
     return f
+
+
+def string_width(s: str) -> int:
+    if not s:
+        return 0
+
+    return max(len(line) for line in s.splitlines())

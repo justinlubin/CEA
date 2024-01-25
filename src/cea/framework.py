@@ -13,15 +13,15 @@ from .core import *
 
 
 class Library:
-    _rules: list[Rule]
+    _rules: list[NamedRule]
 
     def __init__(self):
         self._rules = []
 
-    def register_rule(self, rule: Rule) -> None:
-        self._rules.append(rule)
+    def register_rule(self, named_rule: NamedRule) -> None:
+        self._rules.append(named_rule)
 
-    def rules(self) -> list[Rule]:
+    def rules(self) -> list[NamedRule]:
         return self._rules
 
     @staticmethod
@@ -115,6 +115,9 @@ def precondition(
                     "Precondition parameter name does not match parameter name"
                 )
 
+            if pc_param.name == "ret":
+                raise ValueError("Non-last parameter name is ret")
+
             assert issubclass(pc_param.annotation, Metadata)
             assert issubclass(func_param.annotation, Value)
 
@@ -139,11 +142,15 @@ def precondition(
         args.append(pc_params[-1].annotation.free("ret__"))
 
         library.register_rule(
-            Rule(
+            NamedRule(
                 label=func,
-                head=args[-1],
-                dependencies=tuple(args[:-1]),
-                checks=tuple(pc(*args)),
+                rule=Rule(
+                    head=args[-1],
+                    dependencies=OrderedDict(
+                        (f.name, a) for f, a in zip(func_params, args[:-1])
+                    ),
+                    checks=tuple(pc(*args)),
+                ),
             )
         )
 

@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from .framework import *
 
 lib = Library()

@@ -1,7 +1,8 @@
 from abc import ABCMeta, abstractmethod
 from collections import OrderedDict
-from dataclasses import dataclass
 from typing import Callable, Optional
+
+import inspect
 
 from . import souffle
 
@@ -35,7 +36,7 @@ class Term(metaclass=ABCMeta):
     def __str__(self) -> str:
         return self.dl_repr()
 
-    def free_vars(self) -> set["Var"]:
+    def free_variables(self) -> set["Var"]:
         return set()
 
     def ground(self) -> bool:
@@ -56,7 +57,7 @@ class Var(Term):
         return self._name
 
     @override
-    def free_vars(self) -> set["Var"]:
+    def free_variables(self) -> set["Var"]:
         return {self}
 
     @override
@@ -186,9 +187,9 @@ class Atom(metaclass=ABCMeta):
                 + ")"
             )
 
-    def free_vars(self) -> set[Var]:
+    def free_variables(self) -> set[Var]:
         return set.union(
-            *[self.get_arg(k).free_vars() for k in self.relation().arity()]
+            *[self.get_arg(k).free_variables() for k in self.relation().arity()]
         )
 
     def ground(self) -> bool:
@@ -250,24 +251,67 @@ class DynamicAtom(Atom):
         )
 
 
-@dataclass
 class Rule:
-    label: Callable
-    head: Atom
-    dependencies: tuple[Atom, ...]
-    checks: tuple[Atom, ...]
+    _head: Atom
+    _dependencies: OrderedDict[str, Atom]
+    _checks: tuple[Atom, ...]
 
-    def body(self) -> tuple[Atom, ...]:
-        return self.dependencies + self.checks
+    def __init__(
+        self,
+        head: Atom,
+        dependencies: OrderedDict[str, Atom],
+        checks: tuple[Atom, ...],
+    ):
+        self._head = head
+        self._dependencies = dependencies
+        self._checks = checks
+
+    def body(self) -> list[Atom]:
+        return list(self.dependencies().values()) + list(self._checks)
+
+    def dependencies(self) -> OrderedDict[str, Atom]:
+        return self._dependencies
+
+    def head(self) -> Atom:
+        return self._head
 
     def dl_repr(self) -> str:
-        comment = f"// {self.label.__name__}"
-        lhs = self.head.dl_repr()
+        lhs = self.head().dl_repr()
         rhs = ",\n  ".join([r.dl_repr() for r in self.body()]) + "."
-        return f"{comment}\n{lhs} :-\n  {rhs}"
+        return f"{lhs} :-\n  {rhs}"
+
+
+class NamedRule:
+    _label: Callable
+    _rule: Rule
+    _source: str
+
+    def __init__(self, label: Callable, rule: Rule):
+        if label.__name__ == "<lambda>":
+            raise ValueError("Cannot use lambda as a name for rule")
+        try:
+            source = inspect.getsource(label)
+        except OSError:
+            raise ValueError("Cannot find source for name for rule")
+
+        self._label = label
+        self._rule = rule
+        self._source = source
+
+    def dl_repr(self) -> str:
+        return f"// {self.name()}\n{self.rule().dl_repr()}"
+
+    def label(self) -> Callable:
+        return self._label
 
     def name(self) -> str:
-        return self.label.__name__
+        return self._label.__name__
+
+    def rule(self) -> Rule:
+        return self._rule
+
+    def source(self) -> str:
+        return self._source
 
 
 class Query:
@@ -278,36 +322,35 @@ class Query:
             name="Goal",
             arity=OrderedDict(
                 (fv.dl_repr(), fv.sort())
-                for fv in set.union(*[a.free_vars() for a in atoms])
+                for fv in set.union(*[a.free_variables() for a in atoms])
             ),
         )
         head = DynamicAtom.free(goal_relation, prefix="")
         self._rule = Rule(
-            label=print,
             head=head,
-            dependencies=tuple(atoms),
+            dependencies=OrderedDict((f"q{i}", a) for i, a in enumerate(atoms)),
             checks=tuple(),
         )
 
     def dl_repr(self) -> str:
         return "\n".join(
             [
-                self._rule.head.relation().dl_repr(output=True),
+                self._rule.head().relation().dl_repr(output=True),
                 "",
                 self._rule.dl_repr(),
             ]
         )
 
     def relation(self) -> Relation:
-        return self._rule.head.relation()
+        return self._rule.head().relation()
 
 
 class DatalogProgram:
     _edbs: list[Atom]
-    _idbs: list[Rule]
+    _idbs: list[NamedRule]
     _relations: list[Relation]
 
-    def __init__(self, edbs: list[Atom], idbs: list[Rule]):
+    def __init__(self, edbs: list[Atom], idbs: list[NamedRule]):
         self._relations = []
 
         for edb in edbs:
@@ -318,7 +361,7 @@ class DatalogProgram:
                 self._relations.append(r)
 
         for idb in idbs:
-            r = idb.head.relation()
+            r = idb.rule().head().relation()
             if r not in self._relations:
                 self._relations.append(r)
 
@@ -347,7 +390,7 @@ class DatalogProgram:
     def edbs(self) -> list[Atom]:
         return self._edbs
 
-    def idbs(self) -> list[Rule]:
+    def idbs(self) -> list[NamedRule]:
         return self._idbs
 
     def run_query(self, query: Query) -> list[Assignment]:
