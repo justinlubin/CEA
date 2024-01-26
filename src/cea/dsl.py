@@ -66,6 +66,7 @@ class Program:
 
         for subtree, bc in derivation_tree.postorder():
             head = subtree.head()
+            assert isinstance(head, fw.Metadata)
             if head in names:
                 continue
 
@@ -75,7 +76,7 @@ class Program:
             if computation:
                 computations.append((head, computation, subtree.children()))
             else:
-                assert isinstance(head, fw.Metadata) and head in self._trace
+                assert head in self._trace
                 initializations.append((head, self._trace[head]))
 
         blocks = []
@@ -88,18 +89,20 @@ class Program:
                 f"{names[m1]} = {parent.__name__}(\n    d={d},\n    m={m1.unparse()},\n)\n"
             )
 
-        blocks.append("# %% Compute\n")
+        blocks.append("\n# %% Compute\n")
 
         for m, c, children in computations:
-            if names[m]:
-                arg_prefix = names[m] + "_"
-                lhs = names[m]
-            else:
-                arg_prefix = ""
-                lhs = "\noutput"
-            arg_string = ", ".join([f"{cc}={arg_prefix}{cc}" for cc in children])
-            rhs = f"{c.__name__}({arg_string})"
-            blocks.append(f"{lhs} = {rhs}")
+            parent = m._parent  # type: ignore
+            lhs = names[m] if names[m] else "output"
+            arg_string = ", ".join(
+                [
+                    f"{child_param}={names[child.head()]}"
+                    for child_param, child in children.items()
+                ]
+            )
+            blocks.append(
+                f"{lhs} = {parent.__name__}(\n    d={c.__name__}({arg_string}),\n    m={m.unparse()},\n)\n"
+            )
 
         return "\n".join(blocks)
 

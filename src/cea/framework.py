@@ -95,6 +95,9 @@ class Metadata(Atom):
     def free(cls: type[M], prefix: str) -> M:
         return cls(**cls.class_relation().free_assignment(prefix))
 
+    def __repr__(self) -> str:
+        return self.unparse()
+
     def unparse(self) -> str:
         arg_string = ", ".join(
             [f"{k}={self.get_arg(k).unparse()}" for k in self.relation().arity()]
@@ -193,6 +196,16 @@ class Value(metaclass=ABCMeta):
     @classmethod
     def matches(cls, d: type, m: type):
         return d == cls.D and m == cls.M
+
+    def __repr__(self) -> str:
+        return (
+            self.__class__.__qualname__
+            + "(d="
+            + repr(self.d)
+            + ", m="
+            + repr(self.m)
+            + ")"
+        )
 
 
 class Event(Value):

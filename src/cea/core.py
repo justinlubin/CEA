@@ -37,6 +37,9 @@ class Term(metaclass=ABCMeta):
     def unparse(self) -> str:
         ...
 
+    def __repr__(self) -> str:
+        return self.unparse()
+
     def free_variables(self) -> set["Var"]:
         return set()
 

@@ -38,6 +38,9 @@ class Time(Term):
     def sort(cls) -> Sort:
         return cls._sort
 
+    def days(self) -> int:
+        raise ValueError("Cannot compute days")
+
     def __eq__(self, other) -> "TimeEq":  # type: ignore[override]
         return TimeEq(lhs=self, rhs=other)
 
@@ -46,20 +49,24 @@ class Time(Term):
 
 
 class TimeLit(Time):
-    day: int
+    _day: int
 
     def __init__(self, day: int):
         if day < 0:
             raise ValueError("Negative day")
-        self.day = day
+        self._day = day
 
     @override
     def dl_repr(self) -> str:
-        return str(self.day)
+        return str(self._day)
 
     @override
     def unparse(self) -> str:
-        return f"TimeLit({self.day})"
+        return f"TimeLit({self._day})"
+
+    @override
+    def days(self) -> int:
+        return self._day
 
 
 class TimeEq(Metadata):
@@ -236,9 +243,13 @@ def mageck_enrichment(
     seq1: Seq,
     seq2: Seq,
 ) -> PhenotypeScore.D:
-    mageck_output = subprocess.check_output(["mageck", ...])  # type: ignore
-    fold_change, sig = parse_mageck_output(mageck_output)  # type: ignore
-    return PhenotypeScore.D(fold_change=fold_change, sig=sig)
+    return PhenotypeScore.D(
+        fold_change=[],
+        sig=[
+            len(seq1.d.path),
+            seq2.m.t.days(),
+        ],
+    )
 
 
 # quantify
@@ -262,7 +273,7 @@ def quantify(
     infection: Infect,
     seq: Seq,
 ) -> Distribution.D:
-    return Distribution.D(histogram=[1, 2])
+    return Distribution.D(histogram=[33, 35 + seq.m.t.days()])
 
 
 # t-test
@@ -287,7 +298,13 @@ def ttest_enrichment(
     d1: Distribution,
     d2: Distribution,
 ) -> PhenotypeScore.D:
-    return ...  # type: ignore
+    return PhenotypeScore.D(
+        sig=[0.01, 0.02],
+        fold_change=[
+            sum(d1.d.histogram),
+            sum(d2.d.histogram),
+        ],
+    )
 
 
 # wrong
