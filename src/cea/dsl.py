@@ -7,55 +7,8 @@ from . import stdbiolib
 FlexibleTerm = int | fw.Term
 
 
-def construct_program(
-    derivation_tree: der.Tree, trace: dict[fw.Metadata, fw.Event.D]
-) -> str:
-    initializations = []
-    computations = []
-
-    names: dict[fw.Atom, str] = {}
-
-    for subtree, bc in derivation_tree.postorder():
-        head = subtree.head()
-        if head in names:
-            continue
-
-        names[head] = "_".join(bc)
-
-        computation = subtree.computation()
-        if computation:
-            computations.append((head, computation, subtree.children()))
-        else:
-            assert isinstance(head, fw.Metadata) and head in trace
-            initializations.append((head, trace[head]))
-
-    blocks = []
-
-    blocks.append("# %% Load data\n")
-
-    for m1, d in initializations:
-        blocks.append(
-            f"{names[m1]} = {d._parent.__name__}(\n    d={d},\n    m={m1.unparse()},\n)\n"
-        )
-
-    blocks.append("# %% Compute\n")
-
-    for m, c, children in computations:
-        if names[m]:
-            arg_prefix = names[m] + "_"
-            lhs = names[m]
-        else:
-            arg_prefix = ""
-            lhs = "\noutput"
-        arg_string = ", ".join([f"{cc}={arg_prefix}{cc}" for cc in children])
-        rhs = f"{c.__name__}({arg_string})"
-        blocks.append(f"{lhs} = {rhs}")
-
-    return "\n".join(blocks)
-
-
 class Program:
-    _trace: dict[fw.Metadata, fw.Event.D]
+    _trace: dict[fw.Metadata, object]
     _query: Optional[fw.Metadata]
     _library: fw.Library
 
@@ -74,7 +27,7 @@ class Program:
         E: type[fw.Event],
         at: dict[str, FlexibleTerm],
         where: dict[str, object],
-    ):
+    ) -> None:
         self._trace[E.M(**Program.wrap_all(at))] = E.D(**where)
 
     def query(
@@ -98,15 +51,57 @@ class Program:
                 ),
             ).construct(initial_goal=goal_atom)
 
-            output_program = construct_program(
-                derivation_tree=dt,
-                trace=self._trace,
-            )
+            output_program = self._construct_output_program(derivation_tree=dt)
 
             print(f"\n## OUTPUT PROGRAM\n\n{output_program}")
 
         else:
             print(">>> Not possible! <<<")
+
+    def _construct_output_program(self, derivation_tree: der.Tree) -> str:
+        initializations = []
+        computations = []
+
+        names: dict[fw.Atom, str] = {}
+
+        for subtree, bc in derivation_tree.postorder():
+            head = subtree.head()
+            if head in names:
+                continue
+
+            names[head] = "_".join(bc)
+
+            computation = subtree.computation()
+            if computation:
+                computations.append((head, computation, subtree.children()))
+            else:
+                assert isinstance(head, fw.Metadata) and head in self._trace
+                initializations.append((head, self._trace[head]))
+
+        blocks = []
+
+        blocks.append("# %% Load data\n")
+
+        for m1, d in initializations:
+            parent = d._parent  # type: ignore
+            blocks.append(
+                f"{names[m1]} = {parent.__name__}(\n    d={d},\n    m={m1.unparse()},\n)\n"
+            )
+
+        blocks.append("# %% Compute\n")
+
+        for m, c, children in computations:
+            if names[m]:
+                arg_prefix = names[m] + "_"
+                lhs = names[m]
+            else:
+                arg_prefix = ""
+                lhs = "\noutput"
+            arg_string = ", ".join([f"{cc}={arg_prefix}{cc}" for cc in children])
+            rhs = f"{c.__name__}({arg_string})"
+            blocks.append(f"{lhs} = {rhs}")
+
+        return "\n".join(blocks)
 
     @staticmethod
     def wrap(x: FlexibleTerm) -> fw.Term:

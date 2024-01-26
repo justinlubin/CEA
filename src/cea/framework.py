@@ -1,3 +1,5 @@
+from abc import ABCMeta
+from collections import OrderedDict
 import inspect
 from typing import (
     Callable,
@@ -10,12 +12,13 @@ from typing import (
 )
 
 from .core import *
+from .util import override
 
 
 class Library:
     _rules: list[NamedRule]
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._rules = []
 
     def register_rule(self, named_rule: NamedRule) -> None:
@@ -129,7 +132,7 @@ def precondition(
             assert issubclass(pc_param.annotation, Metadata)
             assert issubclass(func_param.annotation, Value)
 
-            if pc_param.annotation != func_param.annotation.M:
+            if pc_param.annotation._parent != func_param.annotation:
                 raise ValueError(
                     "Precondition parameter type does not match function parameter type"
                 )
@@ -139,10 +142,7 @@ def precondition(
         if pc_params[-1].name != "ret":
             raise ValueError("Precondition last parameter name not 'ret'")
 
-        if not func_sig.return_annotation._parent.matches(
-            d=func_sig.return_annotation,
-            m=pc_params[-1].annotation,
-        ):
+        if func_sig.return_annotation._parent != pc_params[-1].annotation._parent:
             raise ValueError(
                 "Precondition last parameter type does not match function return type"
             )
@@ -176,15 +176,17 @@ class Value(metaclass=ABCMeta):
         _parent: ClassVar[type]
         ...
 
-    d: D
-    m: M
+    d: object
+    m: Metadata
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         cls.M._parent = cls
         cls.D._parent = cls
 
-    def __init__(self, d: D, m: M):
+    def __init__(self, d: object, m: Metadata):
+        assert isinstance(d, self.D)
+        assert isinstance(m, self.M)
         self.d = d
         self.m = m
 

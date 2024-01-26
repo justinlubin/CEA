@@ -102,7 +102,7 @@ class Relation:
         self._arity = arity
         self._infix_symbol = infix_symbol
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, Relation):
             return False
         if self.name() != other.name():
@@ -158,7 +158,7 @@ class Atom(metaclass=ABCMeta):
     def relation(self) -> Relation:
         ...
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, Atom):
             return False
         if self.relation() != other.relation():

@@ -10,7 +10,7 @@ class SouffleOutput:
     facts: dict[str, list[tuple[str, ...]]]
 
     def dl_repr(self) -> str:
-        def wrap(arg: str):
+        def wrap(arg: str) -> str:
             try:
                 return str(int(arg))
             except ValueError:

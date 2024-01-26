@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 
+from typing import ClassVar, Optional
+
 from .framework import *
+from .util import override
 
 lib = Library()
 
@@ -155,6 +158,9 @@ class Infect(Event):
         t: Time
         c: Cond
 
+    d: D
+    m: M
+
 
 class Seq(Event):
     @dataclass
@@ -164,6 +170,9 @@ class Seq(Event):
     class M(Metadata):
         t: Time
         c: Cond
+
+    d: D
+    m: M
 
 
 ###############################################################################
@@ -179,6 +188,9 @@ class Distribution(Analysis):
         t: Time
         c: Cond
 
+    d: D
+    m: M
+
 
 class PhenotypeScore(Analysis):
     @dataclass
@@ -190,6 +202,9 @@ class PhenotypeScore(Analysis):
         ti: Time
         tf: Time
         c: Cond
+
+    d: D
+    m: M
 
 
 ###############################################################################
@@ -233,7 +248,7 @@ def quantify_pc(
     infection: Infect.M,
     seq: Seq.M,
     ret: Distribution.M,
-):
+) -> list[Atom]:
     return [
         infection.c == seq.c,
         infection.t < seq.t,
@@ -247,7 +262,7 @@ def quantify(
     infection: Infect,
     seq: Seq,
 ) -> Distribution.D:
-    return ...  # type: ignore
+    return Distribution.D(histogram=[1, 2])
 
 
 # t-test
@@ -257,7 +272,7 @@ def ttest_pc(
     d1: Distribution.M,
     d2: Distribution.M,
     ret: PhenotypeScore.M,
-):
+) -> list[Atom]:
     return [
         d1.c == d2.c,
         d1.t < d2.t,
@@ -283,7 +298,7 @@ def pc_wrong(
     seq1: Seq.M,
     seq2: Seq.M,
     ret: PhenotypeScore.M,
-) -> list[Metadata]:
+) -> list[Atom]:
     return [
         infection.t > seq1.t,
         seq1.t < seq2.t,

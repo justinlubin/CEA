@@ -1,5 +1,6 @@
-from typing import TypeVar
+from typing import ParamSpec, TypeVar, Callable
 
+P = ParamSpec("P")
 T = TypeVar("T")
 
 
@@ -10,7 +11,7 @@ def flatten(xss: list[list[T]]) -> list[T]:
     return ret
 
 
-def override(f: T) -> T:
+def override(f: Callable[P, T]) -> Callable[P, T]:
     return f
 
 
