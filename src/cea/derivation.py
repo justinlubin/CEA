@@ -16,7 +16,7 @@ PathedAtom = tuple[Atom, Breadcrumbs]
 
 class Tree(metaclass=ABCMeta):
     @abstractmethod
-    def children(self) -> list["Tree"]:
+    def children(self) -> OrderedDict[str, "Tree"]:
         ...
 
     @abstractmethod
@@ -28,7 +28,7 @@ class Tree(metaclass=ABCMeta):
         ...
 
     @abstractmethod
-    def is_leaf(self) -> bool:
+    def head(self) -> Atom:
         ...
 
     @abstractmethod
@@ -43,11 +43,11 @@ class Tree(metaclass=ABCMeta):
     def tree_string(self, depth: int = 1, prefix: str = "") -> str:
         ...
 
-    def postorder(self) -> list["Tree"]:
+    def postorder(self) -> list[tuple["Tree", Breadcrumbs]]:
         ret = []
-        for c in self.children():
-            ret.extend(c.postorder())
-        ret.append(self)
+        for k, c in self.children().items():
+            ret.extend([(cc, [k] + crumbs) for (cc, crumbs) in c.postorder()])
+        ret.append((self, []))
         return ret
 
     @staticmethod
@@ -62,8 +62,8 @@ class Step(Tree):
     antecedents: OrderedDict[str, Tree]
 
     @override
-    def children(self) -> list[Tree]:
-        return list(self.antecedents.values())
+    def children(self) -> OrderedDict[str, Tree]:
+        return self.antecedents
 
     @override
     def computation(self) -> Optional[Callable]:
@@ -79,8 +79,8 @@ class Step(Tree):
         )
 
     @override
-    def is_leaf(self) -> bool:
-        return False
+    def head(self) -> Atom:
+        return self.consequent
 
     @override
     def replace(
@@ -122,8 +122,8 @@ class Goal(Tree):
     goal: Atom
 
     @override
-    def children(self) -> list[Tree]:
-        return []
+    def children(self) -> OrderedDict[str, Tree]:
+        return OrderedDict()
 
     @override
     def computation(self) -> Optional[Callable]:
@@ -134,8 +134,8 @@ class Goal(Tree):
         return [(self.goal, [])]
 
     @override
-    def is_leaf(self) -> bool:
-        return False
+    def head(self) -> Atom:
+        raise ValueError("Cannot call head on goal node")
 
     @override
     def replace(self, breadcrumbs: Breadcrumbs, new_subtree: Tree) -> Tree:
@@ -153,8 +153,8 @@ class Leaf(Tree):
     leaf: Atom
 
     @override
-    def children(self) -> list[Tree]:
-        return []
+    def children(self) -> OrderedDict[str, Tree]:
+        return OrderedDict()
 
     @override
     def computation(self) -> Optional[Callable]:
@@ -165,8 +165,8 @@ class Leaf(Tree):
         return []
 
     @override
-    def is_leaf(self) -> bool:
-        return True
+    def head(self) -> Atom:
+        return self.leaf
 
     @override
     def replace(self, breadcrumbs: Breadcrumbs, new_subtree: Tree) -> Tree:
