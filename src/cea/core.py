@@ -33,8 +33,9 @@ class Term(metaclass=ABCMeta):
     def dl_repr(self) -> str:
         ...
 
-    def __str__(self) -> str:
-        return self.dl_repr()
+    @abstractmethod
+    def unparse(self) -> str:
+        ...
 
     def free_variables(self) -> set["Var"]:
         return set()
@@ -55,6 +56,10 @@ class Var(Term):
     @override
     def dl_repr(self) -> str:
         return self._name
+
+    @override
+    def unparse(self) -> str:
+        return self.__class__.__qualname__ + '("' + self._name + '")'
 
     @override
     def free_variables(self) -> set["Var"]:

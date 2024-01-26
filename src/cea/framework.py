@@ -42,6 +42,8 @@ class Metadata(Atom):
         arity = OrderedDict()
 
         for name, typ in cls.__annotations__.items():
+            if name.startswith("_"):
+                continue
             assert issubclass(typ, Term)
             arity[name] = typ.sort()
 
@@ -89,6 +91,12 @@ class Metadata(Atom):
     @classmethod
     def free(cls: type[M], prefix: str) -> M:
         return cls(**cls.class_relation().free_assignment(prefix))
+
+    def unparse(self) -> str:
+        arg_string = ", ".join(
+            [f"{k}={self.get_arg(k).unparse()}" for k in self.relation().arity()]
+        )
+        return self.__class__.__qualname__ + "(" + arg_string + ")"
 
 
 P = ParamSpec("P")
@@ -161,9 +169,11 @@ def precondition(
 
 class Value(metaclass=ABCMeta):
     class D:
+        _parent: ClassVar[type]
         ...
 
     class M(Metadata):
+        _parent: ClassVar[type]
         ...
 
     d: D

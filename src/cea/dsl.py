@@ -31,8 +31,14 @@ def construct_program(
 
     blocks = []
 
+    blocks.append("# %% Load data\n")
+
     for m1, d in initializations:
-        blocks.append(f"{names[m1]} = {d} @ {m1.dl_repr()}")
+        blocks.append(
+            f"{names[m1]} = {d._parent.__name__}(\n    d={d},\n    m={m1.unparse()},\n)\n"
+        )
+
+    blocks.append("# %% Compute\n")
 
     for m, c, children in computations:
         if names[m]:
@@ -40,8 +46,8 @@ def construct_program(
             lhs = names[m]
         else:
             arg_prefix = ""
-            lhs = "output"
-        arg_string = ", ".join([f"{arg_prefix}{cc}" for cc in children])
+            lhs = "\noutput"
+        arg_string = ", ".join([f"{cc}={arg_prefix}{cc}" for cc in children])
         rhs = f"{c.__name__}({arg_string})"
         blocks.append(f"{lhs} = {rhs}")
 

@@ -54,6 +54,10 @@ class TimeLit(Time):
     def dl_repr(self) -> str:
         return str(self.day)
 
+    @override
+    def unparse(self) -> str:
+        return f"TimeLit({self.day})"
+
 
 class TimeEq(Metadata):
     lhs: Time
@@ -119,8 +123,13 @@ class CondLit(Cond):
             self.symbol = f"c{CondLit._counter}"
             CondLit._counter += 1
 
+    @override
     def dl_repr(self) -> str:
         return f'"{self.symbol}"'
+
+    @override
+    def unparse(self) -> str:
+        return f'CondLit("{self.symbol}")'
 
 
 class CondEq(Metadata):
