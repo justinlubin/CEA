@@ -1,5 +1,7 @@
-from dataclasses import dataclass
+import subprocess as sp
+import os
 
+from dataclasses import dataclass
 from typing import ClassVar, Optional
 
 from .framework import *
@@ -20,7 +22,7 @@ class TimeSort(Sort):
 
     @override
     def parse(self, s: str) -> Term:
-        return TimeLit(int(s))
+        return Day(int(s))
 
     @override
     def var(self, s: str) -> Var:
@@ -48,7 +50,7 @@ class Time(Term):
         return TimeLt(lhs=self, rhs=other)
 
 
-class TimeLit(Time):
+class Day(Time):
     _day: int
 
     def __init__(self, day: int):
@@ -62,7 +64,7 @@ class TimeLit(Time):
 
     @override
     def unparse(self) -> str:
-        return f"TimeLit({self._day})"
+        return f"Day({self._day})"
 
     @override
     def days(self) -> int:
@@ -92,36 +94,39 @@ class TimeLt(Metadata):
 # Condition
 
 
-class CondSort(Sort):
+class PopulationSort(Sort):
     @override
     def dl_repr(self) -> str:
         return "symbol"
 
     @override
     def parse(self, s: str) -> Term:
-        return CondLit(s)
+        return Pop(s)
 
     @override
     def var(cls, name: str) -> Var:
-        class V(Var, Cond):
+        class V(Var, Population):
             pass
 
         return V(name)
 
 
-class Cond(Term):
-    _sort: ClassVar[Sort] = CondSort()
+class Population(Term):
+    _sort: ClassVar[Sort] = PopulationSort()
 
     @override
     @classmethod
     def sort(cls) -> Sort:
         return cls._sort
 
-    def __eq__(self, other) -> "CondEq":  # type: ignore[override]
-        return CondEq(lhs=self, rhs=other)
+    def __eq__(self, other) -> "PopulationEq":  # type: ignore[override]
+        return PopulationEq(lhs=self, rhs=other)
+
+    def name(self) -> str:
+        raise ValueError("Cannot compute name")
 
 
-class CondLit(Cond):
+class Pop(Population):
     _counter: ClassVar[int] = 0
 
     symbol: str
@@ -130,8 +135,8 @@ class CondLit(Cond):
         if symbol:
             self.symbol = symbol
         else:
-            self.symbol = f"c{CondLit._counter}"
-            CondLit._counter += 1
+            self.symbol = f"p{Pop._counter}"
+            Pop._counter += 1
 
     @override
     def dl_repr(self) -> str:
@@ -139,12 +144,90 @@ class CondLit(Cond):
 
     @override
     def unparse(self) -> str:
-        return f'CondLit("{self.symbol}")'
+        return f'Pop("{self.symbol}")'
+
+    @override
+    def name(self) -> str:
+        return self.symbol
 
 
-class CondEq(Metadata):
-    lhs: Cond
-    rhs: Cond
+class PopulationEq(Metadata):
+    lhs: Population
+    rhs: Population
+
+    @override
+    @classmethod
+    def infix_symbol(cls) -> Optional[str]:
+        return "="
+
+
+# Infection
+
+
+class InfectionSort(Sort):
+    @override
+    def dl_repr(self) -> str:
+        return "symbol"
+
+    @override
+    def parse(self, s: str) -> Term:
+        library, negative_controls = s.split(";")
+        return Inf(library=library, negative_controls=negative_controls)
+
+    @override
+    def var(cls, name: str) -> Var:
+        class V(Var, Infection):
+            pass
+
+        return V(name)
+
+
+class Infection(Term):
+    _sort: ClassVar[Sort] = InfectionSort()
+
+    @override
+    @classmethod
+    def sort(cls) -> Sort:
+        return cls._sort
+
+    def __eq__(self, other) -> "InfectionEq":  # type: ignore[override]
+        return InfectionEq(lhs=self, rhs=other)
+
+    def library(self) -> str:
+        raise ValueError("Cannot compute path")
+
+    def negative_controls(self) -> str:
+        raise ValueError("Cannot compute negative controls")
+
+
+class Inf(Infection):
+    _library: str
+    _negative_controls: str
+
+    def __init__(self, library: str, negative_controls: str) -> None:
+        self._library = library
+        self._negative_controls = negative_controls
+
+    @override
+    def dl_repr(self) -> str:
+        return f'"{self._library};{self._negative_controls}"'
+
+    @override
+    def unparse(self) -> str:
+        return f'Inf(library="{self._library}", negative_controls="{self._negative_controls}")'
+
+    @override
+    def library(self) -> str:
+        return self._library
+
+    @override
+    def negative_controls(self) -> str:
+        return self._negative_controls
+
+
+class InfectionEq(Metadata):
+    lhs: Infection
+    rhs: Infection
 
     @override
     @classmethod
@@ -153,184 +236,259 @@ class CondEq(Metadata):
 
 
 ###############################################################################
-# Events
+# MDs
 
 
-class Infect(Event):
-    @dataclass
-    class D:
-        library: str
-
+class Infect(MD):
     class M(Metadata):
         t: Time
-        c: Cond
+        pop: Population
+        inf: Infection
 
-    d: D
+    @dataclass
+    class D:
+        pass
+
     m: M
+    d: D
 
 
-class Seq(Event):
+class Infected(MD):
+    class M(Metadata):
+        t: Time
+        pop: Population
+        inf: Infection
+
+    @dataclass
+    class D:
+        pass
+
+    m: M
+    d: D
+
+
+class CellSort(MD):
+    class M(Metadata):
+        t: Time
+        pop_in: Population
+        pop_no: Population
+        pop_yes: Population
+
+    @dataclass
+    class D:
+        pass
+
+    m: M
+    d: D
+
+
+class Seq(MD):
+    class M(Metadata):
+        t: Time
+        pop: Population
+
     @dataclass
     class D:
         path: str
 
-    class M(Metadata):
-        t: Time
-        c: Cond
-
-    d: D
     m: M
+    d: D
 
 
-###############################################################################
-# Analysis types
+class ReadCountMatrix(MD):
+    class M(Metadata):
+        t1: Time
+        t2: Time
+        pop1: Population
+        pop2: Population
 
-
-class Distribution(Analysis):
     @dataclass
     class D:
-        histogram: list[float]
+        path: str
+        inf: Infection
 
-    class M(Metadata):
-        t: Time
-        c: Cond
-
-    d: D
     m: M
+    d: D
 
 
-class PhenotypeScore(Analysis):
+class PhenotypeScore(MD):
+    class M(Metadata):
+        t1: Time
+        t2: Time
+        pop1: Population
+        pop2: Population
+
     @dataclass
     class D:
-        fold_change: list[float]
-        sig: list[float]
+        path: str
 
-    class M(Metadata):
-        ti: Time
-        tf: Time
-        c: Cond
-
-    d: D
     m: M
+    d: D
 
 
 ###############################################################################
 # API
 
-# MAGeCK
+# Infections
 
 
-def mageck_pc(
-    infection: Infect.M,
-    seq1: Seq.M,
-    seq2: Seq.M,
-    ret: PhenotypeScore.M,
+def infect_infected_pc(inf: Infect.M, ret: Infected.M) -> list[Metadata]:
+    return [ret.t == inf.t, ret.pop == inf.pop, ret.inf == inf.inf]
+
+
+@precondition(lib, infect_infected_pc)
+def infect_infected(inf: Infect) -> Infected.D:
+    return Infected.D()
+
+
+def commute_infected_sort_yes_pc(
+    inf: Infected.M,
+    cs: CellSort.M,
+    ret: Infected.M,
 ) -> list[Metadata]:
     return [
-        infection.t < seq1.t,
-        seq1.t < seq2.t,
-        ret.ti == seq1.t,
-        ret.tf == seq2.t,
-        infection.c == seq1.c,
-        infection.c == seq2.c,
-        infection.c == ret.c,
+        inf.pop == cs.pop_in,
+        inf.t < cs.t,
+        ret.t == inf.t,
+        ret.pop == cs.pop_yes,
+        ret.inf == inf.inf,
     ]
 
 
-@precondition(lib, mageck_pc)
-def mageck_enrichment(
-    infection: Infect,
-    seq1: Seq,
-    seq2: Seq,
-) -> PhenotypeScore.D:
-    return PhenotypeScore.D(
-        fold_change=[],
-        sig=[
-            len(seq1.d.path),
-            seq2.m.t.days(),
-        ],
-    )
+def commute_infected_sort_no_pc(
+    inf: Infected.M,
+    cs: CellSort.M,
+    ret: Infected.M,
+) -> list[Metadata]:
+    return [
+        inf.pop == cs.pop_in,
+        inf.t < cs.t,
+        ret.t == inf.t,
+        ret.pop == cs.pop_no,
+        ret.inf == inf.inf,
+    ]
 
 
-# quantify
+@precondition(lib, commute_infected_sort_yes_pc)
+def commute_infected_sort_yes(inf: Infected, cs: CellSort) -> Infected.D:
+    return inf.d
+
+
+@precondition(lib, commute_infected_sort_no_pc)
+def commute_infected_sort_no(inf: Infected, cs: CellSort) -> Infected.D:
+    return inf.d
+
+
+# Read Counts
 
 
 def quantify_pc(
-    infection: Infect.M,
-    seq: Seq.M,
-    ret: Distribution.M,
-) -> list[Atom]:
+    inf1: Infected.M,
+    inf2: Infected.M,
+    seq1: Seq.M,
+    seq2: Seq.M,
+    ret: ReadCountMatrix.M,
+) -> list[Metadata]:
     return [
-        infection.c == seq.c,
-        infection.t < seq.t,
-        ret.t == seq.t,
-        ret.c == seq.c,
+        inf1.t == inf2.t,
+        inf1.inf == inf2.inf,
+        inf1.pop == seq1.pop,
+        inf2.pop == seq2.pop,
+        inf1.t < seq1.t,
+        inf2.t < seq2.t,
+        ret.t1 == seq1.t,
+        ret.pop1 == seq1.pop,
+        ret.t2 == seq2.t,
+        ret.pop2 == seq2.pop,
     ]
 
 
 @precondition(lib, quantify_pc)
-def quantify(
-    infection: Infect,
-    seq: Seq,
-) -> Distribution.D:
-    return Distribution.D(histogram=[33, 35 + seq.m.t.days()])
-
-
-# t-test
-
-
-def ttest_pc(
-    d1: Distribution.M,
-    d2: Distribution.M,
-    ret: PhenotypeScore.M,
-) -> list[Atom]:
-    return [
-        d1.c == d2.c,
-        d1.t < d2.t,
-        ret.c == d1.c,
-        ret.ti == d1.t,
-        ret.tf == d2.t,
-    ]
-
-
-@precondition(lib, ttest_pc)
-def ttest_enrichment(
-    d1: Distribution,
-    d2: Distribution,
-) -> PhenotypeScore.D:
-    return PhenotypeScore.D(
-        sig=[0.01, 0.02],
-        fold_change=[
-            sum(d1.d.histogram),
-            sum(d2.d.histogram),
-        ],
+def quantify(inf1: Infected, inf2: Infected, seq1: Seq, seq2: Seq) -> ReadCountMatrix.D:
+    inf = inf1.m.inf
+    name1 = seq1.m.pop.name()
+    name2 = seq2.m.pop.name()
+    fullname = f"{name1}-{name2}"
+    sp.run(
+        [
+            "mageck",
+            "count",
+            "-l",
+            inf.library(),
+            "-n",
+            fullname,
+            "--sample-label",
+            f"{name1},{name2}",
+            "--fastq",
+            seq1.d.path,
+            seq2.d.path,
+        ]
     )
+    return ReadCountMatrix.D(path=f"{fullname}.count.txt", inf=inf)
 
 
-# wrong
+# MAGeCK
 
 
-def pc_wrong(
-    infection: Infect.M,
-    seq1: Seq.M,
-    seq2: Seq.M,
+def mageck_sequential_pc(
+    rcm: ReadCountMatrix.M,
     ret: PhenotypeScore.M,
-) -> list[Atom]:
+) -> list[Metadata]:
     return [
-        infection.t > seq1.t,
-        seq1.t < seq2.t,
-        ret.ti == seq1.t,
-        ret.tf == seq2.t,
-        infection.c == seq1.c,
-        infection.c == seq2.c,
-        infection.c == ret.c,
+        rcm.t1 < rcm.t2,
+        rcm.pop1 == rcm.pop2,
+        ret.t1 == rcm.t1,
+        ret.t2 == rcm.t2,
+        ret.pop1 == rcm.pop1,
+        ret.pop2 == rcm.pop2,
     ]
 
 
-@precondition(lib, pc_wrong)
-def wrong_fn(
-    infection: Infect,
-    seq1: Seq,
-    seq2: Seq,
+def mageck_parallel_pc(
+    rcm: ReadCountMatrix.M,
+    ret: PhenotypeScore.M,
+) -> list[Metadata]:
+    return [
+        rcm.t1 == rcm.t2,
+        ret.t1 == rcm.t1,
+        ret.t2 == rcm.t2,
+        ret.pop1 == rcm.pop1,
+        ret.pop2 == rcm.pop2,
+    ]
+
+
+@precondition(lib, mageck_sequential_pc)
+def mageck_sequential(
+    rcm: ReadCountMatrix,
 ) -> PhenotypeScore.D:
     return ...  # type: ignore
+
+
+@precondition(lib, mageck_parallel_pc)
+def mageck_parallel(
+    rcm: ReadCountMatrix,
+) -> PhenotypeScore.D:
+    name1 = rcm.m.pop1.name()
+    name2 = rcm.m.pop2.name()
+    fullname = f"{name1}-{name2}"
+    sp.run(
+        [
+            "mageck",
+            "test",
+            "-k",
+            f"{fullname}.count.txt",
+            "-t",
+            name2,
+            "-c",
+            name1,
+            "-n",
+            fullname,
+            "--control-sgrna",
+            rcm.d.inf.negative_controls(),
+        ]
+    )
+    return PhenotypeScore.D(path="{fullname}.gene_summary.txt")
+
+
+# mageck count -l library.txt -n demo --sample-label L1,CTRL  --fastq test1.fastq test2.fastq
+# mageck test -k demo.count.txt -t L1 -c CTRL -n demo --control-sgrna negative_controls.csv

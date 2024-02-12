@@ -28,11 +28,14 @@ def run(program: str) -> SouffleOutput:
         program_filename = tmp_dirname + "/program.dl"
         with open(program_filename, "w") as f:
             f.write(program)
-        subprocess.run(
-            ["souffle", "-D", tmp_dirname, program_filename],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        with open("souffle/prog.txt", "w") as prog_f:
+            prog_f.write(program)
+        with open("souffle/err.txt", "w") as err_f:
+            subprocess.run(
+                ["souffle", "-D", tmp_dirname, program_filename],
+                stdout=subprocess.DEVNULL,
+                stderr=err_f,
+            )
         facts: dict[str, list[tuple[str, ...]]] = {}
         for filename in os.listdir(tmp_dirname):
             if not filename.endswith(".csv"):

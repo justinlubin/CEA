@@ -133,7 +133,7 @@ def precondition(
                 raise ValueError("Non-last parameter name is ret")
 
             assert issubclass(pc_param.annotation, Metadata)
-            assert issubclass(func_param.annotation, Value)
+            assert issubclass(func_param.annotation, MD)
 
             if pc_param.annotation._parent != func_param.annotation:
                 raise ValueError(
@@ -170,47 +170,35 @@ def precondition(
     return wrapper
 
 
-class Value(metaclass=ABCMeta):
-    class D:
-        _parent: ClassVar[type]
-        ...
-
+class MD(metaclass=ABCMeta):
     class M(Metadata):
         _parent: ClassVar[type]
         ...
 
-    d: object
+    class D:
+        _parent: ClassVar[type]
+        ...
+
     m: Metadata
+    d: object
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         cls.M._parent = cls
         cls.D._parent = cls
 
-    def __init__(self, d: object, m: Metadata):
-        assert isinstance(d, self.D)
+    def __init__(self, m: Metadata, d: object):
         assert isinstance(m, self.M)
-        self.d = d
+        assert isinstance(d, self.D)
         self.m = m
-
-    @classmethod
-    def matches(cls, d: type, m: type):
-        return d == cls.D and m == cls.M
+        self.d = d
 
     def __repr__(self) -> str:
         return (
             self.__class__.__qualname__
-            + "(d="
-            + repr(self.d)
-            + ", m="
+            + "(m="
             + repr(self.m)
+            + ", d="
+            + repr(self.d)
             + ")"
         )
-
-
-class Event(Value):
-    pass
-
-
-class Analysis(Value):
-    pass

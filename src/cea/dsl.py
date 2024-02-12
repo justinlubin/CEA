@@ -1,5 +1,3 @@
-from typing import Optional
-
 from . import derivation as der
 from . import framework as fw
 from . import stdbiolib
@@ -9,7 +7,6 @@ FlexibleTerm = int | fw.Term
 
 class Program:
     _trace: dict[fw.Metadata, object]
-    _query: Optional[fw.Metadata]
     _library: fw.Library
 
     def __init__(self, *libraries: fw.Library) -> None:
@@ -19,28 +16,16 @@ class Program:
         self._trace = {}
         self._library = fw.Library.merge(libraries)
 
-    def Condition(self) -> stdbiolib.CondLit:
-        return stdbiolib.CondLit()
+    def do(self, m: fw.Metadata, d: object) -> None:
+        assert m._parent == d._parent  # type: ignore
+        self._trace[m] = d
 
-    def do(
-        self,
-        E: type[fw.Event],
-        at: dict[str, FlexibleTerm],
-        where: dict[str, object],
-    ) -> None:
-        self._trace[E.M(**Program.wrap_all(at))] = E.D(**where)
-
-    def query(
-        self,
-        A: type[fw.Analysis],
-        at: dict[str, FlexibleTerm],
-    ) -> None:
+    def query(self, m: fw.Metadata) -> None:
         dl_prog = fw.DatalogProgram(
             edbs=list(self._trace.keys()),
             idbs=self._library.rules(),
         )
-        goal_atom = A.M(**Program.wrap_all(at))
-        if dl_prog.run_query(query=fw.Query([goal_atom])):
+        if dl_prog.run_query(query=fw.Query([m])):
             print(">>> Possible! <<<")
 
             dt = der.Constructor(
@@ -49,7 +34,7 @@ class Program:
                     goal_mode=der.CLIInteractor.Mode.AUTO,
                     rule_mode=der.CLIInteractor.Mode.FAST_FORWARD,
                 ),
-            ).construct(initial_goal=goal_atom)
+            ).construct(initial_goal=m)
 
             output_program = self._construct_output_program(derivation_tree=dt)
 
@@ -81,6 +66,8 @@ class Program:
 
         blocks = []
 
+        blocks.append("from cea.stdbiolib import *\n")
+
         blocks.append("# %% Load data\n")
 
         for m1, d in initializations:
@@ -105,14 +92,3 @@ class Program:
             )
 
         return "\n".join(blocks)
-
-    @staticmethod
-    def wrap(x: FlexibleTerm) -> fw.Term:
-        if isinstance(x, int):
-            return stdbiolib.TimeLit(x)
-        else:
-            return x
-
-    @staticmethod
-    def wrap_all(xs: dict[str, FlexibleTerm]) -> dict[str, fw.Term]:
-        return {k: Program.wrap(v) for k, v in xs.items()}
