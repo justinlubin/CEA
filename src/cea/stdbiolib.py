@@ -1,5 +1,8 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
 import subprocess as sp
-import os
 
 from dataclasses import dataclass
 from typing import ClassVar, Optional
@@ -326,6 +329,21 @@ class PhenotypeScore(MD):
     d: D
 
 
+class VolcanoPlot(MD):
+    class M(Metadata):
+        t1: Time
+        t2: Time
+        pop1: Population
+        pop2: Population
+
+    @dataclass
+    class D:
+        pass
+
+    m: M
+    d: D
+
+
 ###############################################################################
 # API
 
@@ -487,8 +505,24 @@ def mageck_parallel(
             rcm.d.inf.negative_controls(),
         ]
     )
-    return PhenotypeScore.D(path="{fullname}.gene_summary.txt")
+    return PhenotypeScore.D(path=f"{fullname}.gene_summary.txt")
 
 
-# mageck count -l library.txt -n demo --sample-label L1,CTRL  --fastq test1.fastq test2.fastq
-# mageck test -k demo.count.txt -t L1 -c CTRL -n demo --control-sgrna negative_controls.csv
+def volcano_plot_pc(ps: PhenotypeScore.M, ret: VolcanoPlot.M) -> list[Metadata]:
+    return [
+        ret.t1 == ps.t1,
+        ret.t2 == ps.t2,
+        ret.pop1 == ps.pop1,
+        ret.pop2 == ps.pop2,
+    ]
+
+
+@precondition(lib, volcano_plot_pc)
+def volcano_plot(ps: PhenotypeScore) -> VolcanoPlot.D:
+    df = pd.read_csv(ps.d.path, sep="\t")
+    fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+    ax.scatter(df["pos|lfc"], -np.log10(df["pos|fdr"]))
+    ax.set_xlabel("LFC")
+    ax.set_ylabel("FDR")
+    fig.savefig(f"Volcano-{ps.d.path}.pdf")
+    return VolcanoPlot.D()

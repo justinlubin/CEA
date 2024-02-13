@@ -7,13 +7,15 @@ unsorted = Pop("unsorted")
 off = Pop("off")
 on = Pop("on")
 
-inf = Inf(
-    library="/Users/jlubin/Desktop/ex/library.csv",
-    negative_controls="/Users/jlubin/Desktop/ex/negative_controls.csv",
-)
-
 p.do(
-    Infect.M(t=Day(1), pop=unsorted, inf=inf),
+    Infect.M(
+        t=Day(1),
+        pop=unsorted,
+        inf=Inf(
+            library="/Users/jlubin/Desktop/ex/library.csv",
+            negative_controls="/Users/jlubin/Desktop/ex/negative_controls.csv",
+        ),
+    ),
     Infect.D(),
 )
 
@@ -33,7 +35,7 @@ p.do(
 )
 
 p.query(
-    PhenotypeScore.M(
+    VolcanoPlot.M(
         t1=Day(3),
         t2=Day(3),
         pop1=off,
