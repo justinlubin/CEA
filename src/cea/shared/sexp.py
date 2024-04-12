@@ -84,7 +84,7 @@ def _skip_whitespace(s: str, line: int) -> tuple[str, int]:
 
 
 # Precondition: s has no whitespace at the start
-def _parse_helper(s: str, line: int) -> tuple[SExp, str]:
+def _parse_helper(s: str, line: int) -> tuple[SExp, str, int]:
     if s[0] == "(":
         s = s[1:]
         elems = []
@@ -95,25 +95,36 @@ def _parse_helper(s: str, line: int) -> tuple[SExp, str]:
             if s[0] == ")":
                 s = s[1:]
                 break
-            elem, s = _parse_helper(s, line)
+            elem, s, line = _parse_helper(s, line)
             elems.append(elem)
-        return SList(elems), s
+        return SList(elems), s, line
     else:
         m = re.match(ATOM_REGEX, s)
         if not m:
             raise SexpParseException(line, CannotParseAtom(s))
 
-        return SAtom(s[: m.end()]), s[m.end() :]
+        return SAtom(s[: m.end()]), s[m.end() :], line
 
 
 def parse(s: str, *, line: int = 1) -> SExp:
     s, line = _skip_whitespace(s, line)
-    sexp, s = _parse_helper(s, line)
+    sexp, s, line = _parse_helper(s, line)
     s, line = _skip_whitespace(s, line)
     if s:
         raise SexpParseException(line, ExpectedEnd(s))
 
     return sexp
+
+
+def parse_many(s: str, *, line: int = 1) -> list[SExp]:
+    sexps = []
+    while True:
+        s, line = _skip_whitespace(s, line)
+        if not s:
+            break
+        sexp, s, line = _parse_helper(s, line)
+        sexps.append(sexp)
+    return sexps
 
 
 ################################################################################
@@ -168,15 +179,3 @@ def _show_helper(
 
 def show(sexp: SExp, *, indent_width: int = 2) -> str:
     return _show_helper(sexp, indent_width, 0)
-
-
-test = """
-(define foo VolcanoPlot $BREAK
-  ((s1 Seq) 3 $BREAK (s2 Seq) 2 )
-  (and $BREAK
-    (a b)
-    (c d)))
-
-"""
-
-print(show(parse(test)))

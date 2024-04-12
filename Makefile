@@ -1,10 +1,10 @@
 .PHONY: test
 test:
-	pytest
+	python -m unittest
 
 .PHONY: check
 check:
-	flake8 src; mypy src
+	flake8 src; mypy --strict src
 
 .PHONY: install-local
 install-local:

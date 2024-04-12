@@ -2,6 +2,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Optional
 
+from cea.shared.sexp import SAtom, SList, SExp
+
 ################################################################################
 ## Values
 
@@ -42,6 +44,9 @@ class StrValue:
 ConstantValue = IntValue | StrValue
 
 Value = ConstantValue | VarValue
+
+# Parsing
+
 
 ################################################################################
 ## Facts
@@ -141,3 +146,7 @@ class Library:
     eventTypes: list[EventType]
     analysisTypes: list[AnalysisType]
     computationTypes: list[ComputationType]
+
+
+################################################################################
+## Parse

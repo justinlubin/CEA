@@ -1,12 +1,13 @@
 asttokens==2.4.1
 black==23.11.0
--e git+ssh://git@github.com/justinlubin/CEA.git@17252e4a3e8fe9caf8b69fbc346fb522d5bd7827#egg=cea
+-e git+ssh://git@github.com/justinlubin/CEA.git@8cab3c5be68b30ab415929acafb73026a6f3f7cf#egg=cea
 click==8.1.7
 contourpy==1.2.0
 cycler==0.12.1
 decorator==5.1.1
 docstring-to-markdown==0.13
 executing==2.0.1
+expecttest==0.2.1
 flake8==6.1.0
 fonttools==4.48.1
 iniconfig==2.0.0
