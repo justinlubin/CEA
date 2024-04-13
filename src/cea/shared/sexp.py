@@ -56,13 +56,13 @@ class ExpectedEnd:
     remaining: str
 
 
-SexpParseExceptionKind = UnexpectedEnd | CannotParseAtom | ExpectedEnd
+ParseExceptionKind = UnexpectedEnd | CannotParseAtom | ExpectedEnd
 
 
 @dataclass
-class SexpParseException(Exception):
+class ParseException(Exception):
     line: int
-    kind: SexpParseExceptionKind
+    kind: ParseExceptionKind
 
 
 ################################################################################
@@ -91,17 +91,20 @@ def _parse_helper(s: str, line: int) -> tuple[SExp, str, int]:
         while True:
             s, line = _skip_whitespace(s, line)
             if not s:
-                raise SexpParseException(line, UnexpectedEnd())
+                raise ParseException(line, UnexpectedEnd())
             if s[0] == ")":
                 s = s[1:]
                 break
             elem, s, line = _parse_helper(s, line)
             elems.append(elem)
         return SList(elems), s, line
+    elif s[0] == '"':
+        end = s.find('"', 1)
+        return SAtom(s[: end + 1]), s[end + 1 :], line
     else:
         m = re.match(ATOM_REGEX, s)
         if not m:
-            raise SexpParseException(line, CannotParseAtom(s))
+            raise ParseException(line, CannotParseAtom(s))
 
         return SAtom(s[: m.end()]), s[m.end() :], line
 
@@ -111,7 +114,7 @@ def parse(s: str, *, line: int = 1) -> SExp:
     sexp, s, line = _parse_helper(s, line)
     s, line = _skip_whitespace(s, line)
     if s:
-        raise SexpParseException(line, ExpectedEnd(s))
+        raise ParseException(line, ExpectedEnd(s))
 
     return sexp
 
